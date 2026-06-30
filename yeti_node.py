@@ -15,6 +15,7 @@ import hashlib
 import logging
 import threading
 import time
+import traceback
 from typing import Any
 
 import requests
@@ -100,25 +101,49 @@ def _nonce_search(
     temperature = float(assignment.get("temperature", 0.3))
     max_tokens = int(assignment.get("max_tokens", 512))
 
+    logger.info(
+        "Nonce search start — task=%s difficulty=%r temperature=%.2f max_tokens=%d max_attempts=%d",
+        task_id, difficulty_target, temperature, max_tokens, cfg.max_nonce_attempts,
+    )
+
     nonce_attempts = 0
     total_prompt_tokens = 0
     total_completion_tokens = 0
 
     while not _STOP_EVENT.is_set():
         nonce_attempts += 1
+        logger.debug("Nonce attempt %d for task %s", nonce_attempts, task_id)
         try:
+            t0 = time.perf_counter()
             output_text, pt, ct = _run_inference(
                 cfg.ollama_host, cfg.model_name, system, prompt, temperature, max_tokens,
             )
+            elapsed = time.perf_counter() - t0
+            logger.debug(
+                "Inference attempt %d OK — task=%s elapsed=%.1fs tokens=%d output_len=%d",
+                nonce_attempts, task_id, elapsed, ct, len(output_text),
+            )
         except Exception as exc:
-            logger.warning("Inference attempt %d failed for task %s: %s", nonce_attempts, task_id, exc)
+            logger.error(
+                "Inference attempt %d FAILED for task %s: %s\n%s",
+                nonce_attempts, task_id, exc, traceback.format_exc(),
+            )
             return False
 
         total_prompt_tokens += pt
         total_completion_tokens += ct
         oh = _output_hash(output_text, task_id, task_salt)
 
+        logger.debug(
+            "Nonce attempt %d hash=%s... meets_difficulty=%s",
+            nonce_attempts, oh[:16], oh.startswith(difficulty_target) if difficulty_target else True,
+        )
+
         if _meets_difficulty(oh, difficulty_target):
+            logger.info(
+                "Difficulty met on attempt %d — task=%s hash=%s...",
+                nonce_attempts, task_id, oh[:16],
+            )
             payload = {
                 "task_id": task_id,
                 "volunteer_id": cfg.volunteer_id,
@@ -146,16 +171,34 @@ def _nonce_search(
                         task_id, nonce_attempts, result.get("miner_reward"),
                     )
                     return True
-                logger.warning("Submission rejected: %s", result.get("reason"))
+                logger.warning(
+                    "Submission REJECTED by coordinator — task=%s reason=%r full_response=%s",
+                    task_id, result.get("reason"), result,
+                )
+                return False
+            except requests.HTTPError as exc:
+                logger.error(
+                    "Submit HTTP error — task=%s status=%s body=%s",
+                    task_id,
+                    exc.response.status_code if exc.response is not None else "?",
+                    exc.response.text if exc.response is not None else str(exc),
+                )
                 return False
             except Exception as exc:
-                logger.error("Submit error for task %s: %s", task_id, exc)
+                logger.error(
+                    "Submit error for task %s: %s\n%s",
+                    task_id, exc, traceback.format_exc(),
+                )
                 return False
 
         if nonce_attempts >= cfg.max_nonce_attempts:
-            logger.warning("Max nonce attempts (%d) reached for task %s", cfg.max_nonce_attempts, task_id)
+            logger.warning(
+                "Max nonce attempts (%d) reached for task %s without meeting difficulty=%r",
+                cfg.max_nonce_attempts, task_id, difficulty_target,
+            )
             return False
 
+    logger.info("Nonce search stopped (stop event) for task %s after %d attempts", task_id, nonce_attempts)
     return False
 
 
@@ -183,7 +226,8 @@ def inference_loop(cfg: YetiConfig, wallet_address: str) -> None:
 
     while not _STOP_EVENT.is_set():
         try:
-            bench_sig, _ = run_benchmark()
+            bench_sig, bench_elapsed = run_benchmark()
+            logger.debug("Benchmark complete — sig=%s elapsed=%.3fs", bench_sig, bench_elapsed)
 
             resp = requests.get(
                 f"{cfg.coordinator_url}/api/task/next",
@@ -195,8 +239,15 @@ def inference_loop(cfg: YetiConfig, wallet_address: str) -> None:
                 continue
             resp.raise_for_status()
             assignment = resp.json()
-            logger.info("Task received: %s", assignment.get("task_id"))
-            _nonce_search(cfg, assignment, bench_sig, wallet_address)
+            logger.info(
+                "Task received: task_id=%s type=%s difficulty=%r",
+                assignment.get("task_id"), assignment.get("task_type"), assignment.get("difficulty_target"),
+            )
+            success = _nonce_search(cfg, assignment, bench_sig, wallet_address)
+            logger.info(
+                "Nonce search finished — task=%s success=%s",
+                assignment.get("task_id"), success,
+            )
 
         except requests.HTTPError as exc:
             if exc.response is not None and exc.response.status_code in (401, 403):
@@ -206,7 +257,9 @@ def inference_loop(cfg: YetiConfig, wallet_address: str) -> None:
             logger.warning("HTTP error in inference loop: %s", exc)
             _STOP_EVENT.wait(5.0)
         except Exception as exc:
-            logger.warning("Inference loop error: %s", exc)
+            logger.error(
+                "Inference loop error: %s\n%s", exc, traceback.format_exc(),
+            )
             _STOP_EVENT.wait(5.0)
 
 
