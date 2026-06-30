@@ -188,6 +188,38 @@ async def test_verify_submission_rejects_bad_wallet_signature(tmp_path) -> None:
 
 
 @pytest.mark.asyncio
+async def test_verify_submission_rejects_excessive_nonce_attempts(tmp_path) -> None:
+    """Submissions claiming more nonce_attempts than MAX_NONCE_ATTEMPTS are rejected."""
+    from coordinator.verifier import MAX_NONCE_ATTEMPTS
+
+    settings = _settings(tmp_path, difficulty_target="")
+    await _register_test_volunteer(settings.DB_PATH)
+    submission = _mined_submission(prefix="")
+    submission.nonce_attempts = MAX_NONCE_ATTEMPTS + 1
+
+    accepted, reason = await verify_submission(submission, _assignment(""), settings)
+
+    assert accepted is False
+    assert "exceeds maximum" in reason
+
+
+@pytest.mark.asyncio
+async def test_verify_submission_accepts_nonce_at_maximum(tmp_path) -> None:
+    """Submissions at exactly MAX_NONCE_ATTEMPTS are accepted."""
+    from coordinator.verifier import MAX_NONCE_ATTEMPTS
+
+    settings = _settings(tmp_path, difficulty_target="")
+    await _register_test_volunteer(settings.DB_PATH)
+    submission = _mined_submission(prefix="")
+    submission.nonce_attempts = MAX_NONCE_ATTEMPTS
+
+    accepted, reason = await verify_submission(submission, _assignment(""), settings)
+
+    assert accepted is True
+    assert reason == "ok"
+
+
+@pytest.mark.asyncio
 async def test_mint_block_generates_ed25519_signature_and_block_hash(tmp_path) -> None:
     private_key = Ed25519PrivateKey.generate()
     key_path = tmp_path / "coordinator.key"
