@@ -19,6 +19,11 @@ from coordinator.schemas import InferenceSubmission, TaskAssignment
 
 MIN_OUTPUT_LENGTH = 10
 
+# 900s task timeout / ~2s minimum inference = ~450 max plausible attempts.
+# Any submission claiming more is either lying or running on hardware that
+# doesn't exist — reject it rather than silently capping the reward.
+MAX_NONCE_ATTEMPTS = 500
+
 
 def _value(source: Any, name: str, default: Any = None) -> Any:
     if isinstance(source, dict):
@@ -54,6 +59,10 @@ async def verify_submission(
     settings: Settings,
 ) -> tuple[bool, str]:
     """Validate a miner submission against its assignment and runtime settings."""
+
+    # ── 0. nonce_attempts sanity bound ───────────────────────────────────────
+    if submission.nonce_attempts > MAX_NONCE_ATTEMPTS:
+        return False, f"nonce_attempts {submission.nonce_attempts} exceeds maximum {MAX_NONCE_ATTEMPTS}"
 
     # ── 1. PoI hash integrity ─────────────────────────────────────────────────
     expected_hash = hashlib.sha256(
