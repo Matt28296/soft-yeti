@@ -40,15 +40,19 @@ class Block:
 
     # Verification fields
     benchmark_signature: str    # GPU micro-benchmark timing blob (Theory 7); "" in Phase 0
-    zk_proof: str               # zkML proof placeholder for Phase 4; always "" now
 
     # Rewards
     miner_reward: float         # YETI credited to miner_wallet
     treasury_reward: float      # YETI credited to coordinator treasury
 
+    # Fields with defaults (backward-compatible; "" for blocks minted before these were added)
+    zk_proof: str = field(default="")               # zkML proof placeholder for Phase 4
+    model_name: str = field(default="")             # Ollama model used by the volunteer
+    miner_pubkey: str = field(default="")           # volunteer's Ed25519 public key (hex)
+
     # Auth (set last — computed over all above)
-    coordinator_signature: str  # Ed25519 hex sig over canonical_bytes(); "" before signing
-    block_hash: str             # SHA-256(canonical_bytes()) including coordinator_signature
+    coordinator_signature: str = field(default="")  # Ed25519 hex sig over signing_payload()
+    block_hash: str = field(default="")             # SHA-256(canonical_bytes()) incl. sig
 
     @staticmethod
     def _serializable(d: dict) -> dict:
@@ -91,6 +95,9 @@ class Block:
 
     @classmethod
     def from_dict(cls, d: dict) -> "Block":
+        d = {**d}
+        d.setdefault("model_name", "")
+        d.setdefault("miner_pubkey", "")
         return cls(**d)
 
 

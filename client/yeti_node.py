@@ -12,6 +12,7 @@ Flow per task:
 from __future__ import annotations
 
 import hashlib
+import json
 import logging
 import threading
 import time
@@ -21,6 +22,7 @@ import requests
 
 from benchmark import run_benchmark
 from yeti_config import YetiConfig
+from yeti_wallet import sign_message
 
 logger = logging.getLogger(__name__)
 
@@ -81,11 +83,34 @@ def _run_inference(
 
 # ── PoI nonce search ──────────────────────────────────────────────────────────
 
+def _submission_signing_message(
+    task_id: str,
+    output_hash: str,
+    miner_wallet: str,
+    nonce_attempts: int,
+    task_salt: str,
+) -> bytes:
+    """Canonical bytes signed to prove wallet ownership of this submission."""
+    return json.dumps(
+        {
+            "miner_wallet": miner_wallet,
+            "nonce_attempts": nonce_attempts,
+            "output_hash": output_hash,
+            "task_id": task_id,
+            "task_salt": task_salt,
+        },
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+
+
 def _nonce_search(
     cfg: YetiConfig,
     assignment: dict[str, Any],
     bench_sig: str,
     wallet_address: str,
+    miner_pubkey: str,
+    privkey_hex: str,
 ) -> bool:
     """Run the PoI nonce search for one assignment.
 
@@ -119,10 +144,15 @@ def _nonce_search(
         oh = _output_hash(output_text, task_id, task_salt)
 
         if _meets_difficulty(oh, difficulty_target):
+            signing_msg = _submission_signing_message(task_id, oh, wallet_address, nonce_attempts, task_salt)
+            submission_sig = sign_message(privkey_hex, signing_msg)
             payload = {
                 "task_id": task_id,
                 "volunteer_id": cfg.volunteer_id,
                 "miner_wallet": wallet_address,
+                "miner_pubkey": miner_pubkey,
+                "miner_signature": submission_sig,
+                "model_name": cfg.model_name,
                 "output_text": output_text,
                 "output_hash": oh,
                 "nonce_attempts": nonce_attempts,
@@ -176,7 +206,7 @@ def heartbeat_loop(cfg: YetiConfig) -> None:
         _STOP_EVENT.wait(cfg.heartbeat_interval_s)
 
 
-def inference_loop(cfg: YetiConfig, wallet_address: str) -> None:
+def inference_loop(cfg: YetiConfig, wallet_address: str, miner_pubkey: str, privkey_hex: str) -> None:
     """Poll for tasks and run the PoI nonce search loop."""
     headers = {"X-Yeti-API-Key": f"{cfg.volunteer_id}:{cfg.api_key}"}
     logger.info("Inference loop started (volunteer=%s model=%s)", cfg.volunteer_id, cfg.model_name)
@@ -196,7 +226,7 @@ def inference_loop(cfg: YetiConfig, wallet_address: str) -> None:
             resp.raise_for_status()
             assignment = resp.json()
             logger.info("Task received: %s", assignment.get("task_id"))
-            _nonce_search(cfg, assignment, bench_sig, wallet_address)
+            _nonce_search(cfg, assignment, bench_sig, wallet_address, miner_pubkey, privkey_hex)
 
         except requests.HTTPError as exc:
             if exc.response is not None and exc.response.status_code in (401, 403):
@@ -212,14 +242,15 @@ def inference_loop(cfg: YetiConfig, wallet_address: str) -> None:
 
 # ── Lifecycle ─────────────────────────────────────────────────────────────────
 
-def start(cfg: YetiConfig, wallet_address: str) -> None:
+def start(cfg: YetiConfig, wallet_address: str, miner_pubkey: str, privkey_hex: str) -> None:
     """Start heartbeat and inference threads (both daemon threads)."""
     _STOP_EVENT.clear()
     threading.Thread(
         target=heartbeat_loop, args=(cfg,), daemon=True, name="yeti-heartbeat",
     ).start()
     threading.Thread(
-        target=inference_loop, args=(cfg, wallet_address), daemon=True, name="yeti-inference",
+        target=inference_loop, args=(cfg, wallet_address, miner_pubkey, privkey_hex),
+        daemon=True, name="yeti-inference",
     ).start()
 
 

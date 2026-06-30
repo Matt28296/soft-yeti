@@ -92,5 +92,5 @@ def choose_canary(seed: str | int | bytes) -> CanaryTask:
 
 
 def verify_canary_output(canary: CanaryTask, actual_output: str) -> bool:
-    """Validate the canary with exact output comparison."""
-    return actual_output == canary.expected_output
+    """Validate the canary output, stripping leading/trailing whitespace first."""
+    return actual_output.strip() == canary.expected_output

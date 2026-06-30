@@ -99,6 +99,12 @@ def save_wallet(wallet: dict[str, str], path: Path, passphrase: str = "") -> Non
         pass  # Windows — ACL management is the caller's responsibility if needed
 
 
+def sign_message(privkey_hex: str, message: bytes) -> str:
+    """Sign arbitrary bytes with the wallet's Ed25519 private key. Returns hex signature."""
+    privkey = Ed25519PrivateKey.from_private_bytes(bytes.fromhex(privkey_hex))
+    return privkey.sign(message).hex()
+
+
 def load_wallet(path: Path, passphrase: str = "") -> dict[str, str]:
     """Load and decrypt a wallet from disk."""
     payload = json.loads(path.read_text(encoding="utf-8"))

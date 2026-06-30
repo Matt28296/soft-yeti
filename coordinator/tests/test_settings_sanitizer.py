@@ -27,8 +27,9 @@ def default_settings(monkeypatch):
 
 
 def test_settings_use_expected_defaults(default_settings):
-    assert default_settings.COORDINATOR_ED25519_KEY_PATH == "./coordinator.key"
-    assert default_settings.COORDINATOR_ED25519_PUBLIC_KEY_PATH == "./coordinator.pub"
+    # Paths are absolute (based on config.py's _HERE) — check filenames only
+    assert default_settings.COORDINATOR_ED25519_KEY_PATH.endswith("coordinator.key")
+    assert default_settings.COORDINATOR_ED25519_PUBLIC_KEY_PATH.endswith("coordinator.pub")
     assert default_settings.COORDINATOR_ED25519_KEY_PASS.get_secret_value() == ""
     assert default_settings.TREASURY_WALLET == "YETI1treasury"
     assert default_settings.REWARD_RATE == 0.001
@@ -36,8 +37,8 @@ def test_settings_use_expected_defaults(default_settings):
     assert default_settings.DIFFICULTY_TARGET == "0000"
     assert default_settings.CANARY_RATE == 0.05
     assert default_settings.CHAIN_ID == "yeti-testnet"
-    assert default_settings.CHAIN_STORE_PATH == "./yeti-chain.jsonl"
-    assert default_settings.DB_PATH == "./coordinator.db"
+    assert default_settings.CHAIN_STORE_PATH.endswith("yeti-chain.jsonl")
+    assert default_settings.DB_PATH.endswith("coordinator.db")
     assert default_settings.API_KEY_HEADER == "X-Yeti-API-Key"
 
 

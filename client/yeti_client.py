@@ -59,6 +59,7 @@ def _setup(cfg_path: Path) -> None:
             json={
                 "volunteer_id": volunteer_id,
                 "miner_wallet": wallet["address"],
+                "miner_pubkey": wallet["pubkey_hex"],
                 "model_name": model_name,
                 "vram_gb": vram_gb,
             },
@@ -89,7 +90,7 @@ def _setup(cfg_path: Path) -> None:
 
 # ── Tray icon (optional) ──────────────────────────────────────────────────────
 
-def _run_tray(cfg: YetiConfig, wallet_address: str) -> None:
+def _run_tray(cfg: YetiConfig, wallet_address: str, miner_pubkey: str, privkey_hex: str) -> None:
     """Run with a system tray icon when pystray + Pillow are available."""
     import pystray
     from PIL import Image, ImageDraw
@@ -115,7 +116,7 @@ def _run_tray(cfg: YetiConfig, wallet_address: str) -> None:
             icon.icon = _icon_image("#888888")
             icon.title = "Soft Yeti — Stopped"
         else:
-            node_start(cfg, wallet_address)
+            node_start(cfg, wallet_address, miner_pubkey, privkey_hex)
             icon.icon = _icon_image("#00cc44")
             icon.title = "Soft Yeti — Mining"
 
@@ -124,7 +125,7 @@ def _run_tray(cfg: YetiConfig, wallet_address: str) -> None:
         icon.stop()
 
     import yeti_node
-    node_start(cfg, wallet_address)
+    node_start(cfg, wallet_address, miner_pubkey, privkey_hex)
 
     icon = pystray.Icon(
         "soft_yeti",
@@ -141,10 +142,10 @@ def _run_tray(cfg: YetiConfig, wallet_address: str) -> None:
 
 # ── CLI mode ──────────────────────────────────────────────────────────────────
 
-def _run_cli(cfg: YetiConfig, wallet_address: str) -> None:
+def _run_cli(cfg: YetiConfig, wallet_address: str, miner_pubkey: str, privkey_hex: str) -> None:
     """CLI fallback — runs mining loops and blocks until Ctrl-C."""
     logger.info("Starting Soft Yeti (CLI mode)  volunteer=%s  wallet=%s", cfg.volunteer_id, wallet_address)
-    node_start(cfg, wallet_address)
+    node_start(cfg, wallet_address, miner_pubkey, privkey_hex)
     try:
         while True:
             time.sleep(60)
@@ -179,13 +180,15 @@ def main() -> None:
 
     wallet = load_wallet(wallet_path)
     wallet_address = wallet["address"]
+    miner_pubkey = wallet["pubkey_hex"]
+    privkey_hex = wallet["privkey_hex"]
 
     try:
         import pystray  # noqa: F401
         from PIL import Image  # noqa: F401
-        _run_tray(cfg, wallet_address)
+        _run_tray(cfg, wallet_address, miner_pubkey, privkey_hex)
     except ImportError:
-        _run_cli(cfg, wallet_address)
+        _run_cli(cfg, wallet_address, miner_pubkey, privkey_hex)
 
 
 if __name__ == "__main__":

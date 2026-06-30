@@ -1,13 +1,16 @@
 from __future__ import annotations
 
 import hashlib
+import time
 from types import SimpleNamespace
 
+import aiosqlite
 import pytest
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
-from cryptography.hazmat.primitives.serialization import Encoding, NoEncryption, PrivateFormat
+from cryptography.hazmat.primitives.serialization import Encoding, NoEncryption, PrivateFormat, PublicFormat
 from pydantic import SecretStr
 
+from coordinator.database import init_db
 from coordinator.minter import _canonical_json, mint_block
 from coordinator.verifier import verify_submission
 
@@ -27,6 +30,9 @@ def _mined_submission(prefix: str = "0", output_base: str = "valid inference out
                 task_id=task_id,
                 volunteer_id="volunteer-001",
                 miner_wallet="YETI1miner",
+                miner_pubkey="",
+                miner_signature="",
+                model_name="",
                 output_text=output_text,
                 output_hash=output_hash,
                 nonce_attempts=nonce + 1,
@@ -61,12 +67,30 @@ def _settings(tmp_path, difficulty_target: str = "0") -> SimpleNamespace:
         REWARD_RATE=0.001,
         TREASURY_FEE=0.1,
         CHAIN_ID="yeti-testnet",
+        DB_PATH=str(tmp_path / "coordinator.db"),
     )
+
+
+async def _register_test_volunteer(db_path: str, pubkey: str = "", model_name: str = "") -> None:
+    """Insert a minimal volunteer record into the test DB.
+
+    Empty pubkey causes verifier to skip signature check (no pubkey stored yet).
+    """
+    await init_db(db_path)
+    async with aiosqlite.connect(db_path) as db:
+        await db.execute(
+            """INSERT OR REPLACE INTO volunteers
+               (volunteer_id, miner_wallet, api_key_hash, model_name, vram_gb, miner_pubkey, registered_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            ("volunteer-001", "YETI1miner", "hash-not-needed", model_name, 8.0, pubkey, time.time()),
+        )
+        await db.commit()
 
 
 @pytest.mark.asyncio
 async def test_verify_submission_accepts_valid_submission(tmp_path) -> None:
     settings = _settings(tmp_path, difficulty_target="0")
+    await _register_test_volunteer(settings.DB_PATH)
     submission = _mined_submission(prefix="0")
     accepted, reason = await verify_submission(submission, _assignment("0"), settings)
 
@@ -77,6 +101,7 @@ async def test_verify_submission_accepts_valid_submission(tmp_path) -> None:
 @pytest.mark.asyncio
 async def test_verify_submission_rejects_hash_mismatch(tmp_path) -> None:
     settings = _settings(tmp_path, difficulty_target="")
+    await _register_test_volunteer(settings.DB_PATH)
     submission = _mined_submission(prefix="")
     submission.output_hash = "f" * 64
 
@@ -89,6 +114,7 @@ async def test_verify_submission_rejects_hash_mismatch(tmp_path) -> None:
 @pytest.mark.asyncio
 async def test_verify_submission_rejects_canary_mismatch(tmp_path) -> None:
     settings = _settings(tmp_path, difficulty_target="")
+    await _register_test_volunteer(settings.DB_PATH)
     submission = _mined_submission(prefix="", output_base="wrong canary output")
     assignment = _assignment("", is_canary=True, canary_task_id="canary-001")
 
@@ -101,12 +127,64 @@ async def test_verify_submission_rejects_canary_mismatch(tmp_path) -> None:
 @pytest.mark.asyncio
 async def test_verify_submission_rejects_difficulty_prefix_failure(tmp_path) -> None:
     settings = _settings(tmp_path, difficulty_target="ffff")
+    await _register_test_volunteer(settings.DB_PATH)
     submission = _mined_submission(prefix="0")
 
     accepted, reason = await verify_submission(submission, _assignment("ffff"), settings)
 
     assert accepted is False
     assert reason == "difficulty not met"
+
+
+@pytest.mark.asyncio
+async def test_verify_submission_accepts_valid_wallet_signature(tmp_path) -> None:
+    """When a pubkey is registered, the submission signature is verified."""
+    from chain.wallet import sign_message, verify_signature
+
+    privkey = Ed25519PrivateKey.generate()
+    pubkey_hex = privkey.public_key().public_bytes(Encoding.Raw, PublicFormat.Raw).hex()
+    privkey_hex = privkey.private_bytes(Encoding.Raw, PrivateFormat.Raw, NoEncryption()).hex()
+
+    settings = _settings(tmp_path, difficulty_target="0")
+    await _register_test_volunteer(settings.DB_PATH, pubkey=pubkey_hex)
+
+    submission = _mined_submission(prefix="0")
+    submission.miner_pubkey = pubkey_hex
+
+    import json
+    signing_msg = json.dumps(
+        {
+            "miner_wallet": submission.miner_wallet,
+            "nonce_attempts": submission.nonce_attempts,
+            "output_hash": submission.output_hash,
+            "task_id": submission.task_id,
+            "task_salt": submission.task_salt,
+        },
+        sort_keys=True, separators=(",", ":"),
+    ).encode("utf-8")
+    submission.miner_signature = sign_message(privkey_hex, signing_msg)
+
+    accepted, reason = await verify_submission(submission, _assignment("0"), settings)
+    assert accepted is True
+    assert reason == "ok"
+
+
+@pytest.mark.asyncio
+async def test_verify_submission_rejects_bad_wallet_signature(tmp_path) -> None:
+    """When a pubkey is registered and the signature is wrong, submission is rejected."""
+    privkey = Ed25519PrivateKey.generate()
+    pubkey_hex = privkey.public_key().public_bytes(Encoding.Raw, PublicFormat.Raw).hex()
+
+    settings = _settings(tmp_path, difficulty_target="0")
+    await _register_test_volunteer(settings.DB_PATH, pubkey=pubkey_hex)
+
+    submission = _mined_submission(prefix="0")
+    submission.miner_pubkey = pubkey_hex
+    submission.miner_signature = "aa" * 64  # wrong signature
+
+    accepted, reason = await verify_submission(submission, _assignment("0"), settings)
+    assert accepted is False
+    assert reason == "invalid wallet signature"
 
 
 @pytest.mark.asyncio

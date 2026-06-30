@@ -17,10 +17,16 @@ async def init_db(db_path: str) -> None:
                 api_key_hash TEXT NOT NULL,
                 model_name TEXT,
                 vram_gb REAL,
+                miner_pubkey TEXT DEFAULT '',
                 registered_at REAL
             )
             """
         )
+        # Migration: add column to pre-existing DBs that lack it
+        try:
+            await db.execute("ALTER TABLE volunteers ADD COLUMN miner_pubkey TEXT DEFAULT ''")
+        except Exception:
+            pass  # Column already exists
         await db.execute(
             """
             CREATE TABLE IF NOT EXISTS subscriptions (

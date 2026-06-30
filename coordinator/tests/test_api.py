@@ -70,6 +70,7 @@ async def test_health_register_auth_task_heartbeat_submit_and_subscription(api_c
     registration = {
         "volunteer_id": "volunteer-1",
         "miner_wallet": "YETI1miner",
+        "miner_pubkey": "aa" * 32,
         "model_name": "qwen2.5-coder:7b-instruct",
         "vram_gb": 12.0,
     }
@@ -127,6 +128,9 @@ async def test_health_register_auth_task_heartbeat_submit_and_subscription(api_c
             "task_id": assignment["task_id"],
             "volunteer_id": "volunteer-1",
             "miner_wallet": "YETI1miner",
+            "miner_pubkey": "aa" * 32,
+            "miner_signature": "bb" * 64,
+            "model_name": "qwen2.5-coder:7b-instruct",
             "output_text": output_text,
             "output_hash": output_hash,
             "nonce_attempts": 7,

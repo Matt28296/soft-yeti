@@ -3,8 +3,15 @@
 from __future__ import annotations
 
 import hashlib
+import json
+import sys
+from pathlib import Path
 from typing import Any
 
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
+from chain.wallet import verify_signature
+from coordinator.auth import get_volunteer_security_info
 from coordinator.canary import CANARY_TASKS, verify_canary_output
 from coordinator.config import Settings
 from coordinator.schemas import InferenceSubmission, TaskAssignment
@@ -26,6 +33,21 @@ def _find_canary(canary_task_id: str):
     return None
 
 
+def _submission_signing_message(submission: InferenceSubmission) -> bytes:
+    """Canonical bytes the volunteer signs to prove wallet ownership."""
+    return json.dumps(
+        {
+            "miner_wallet": submission.miner_wallet,
+            "nonce_attempts": submission.nonce_attempts,
+            "output_hash": submission.output_hash,
+            "task_id": submission.task_id,
+            "task_salt": submission.task_salt,
+        },
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+
+
 async def verify_submission(
     submission: InferenceSubmission,
     assignment: TaskAssignment,
@@ -33,21 +55,49 @@ async def verify_submission(
 ) -> tuple[bool, str]:
     """Validate a miner submission against its assignment and runtime settings."""
 
+    # ── 1. PoI hash integrity ─────────────────────────────────────────────────
     expected_hash = hashlib.sha256(
         f"{submission.output_text}{submission.task_id}{submission.task_salt}".encode("utf-8")
     ).hexdigest()
     if expected_hash != submission.output_hash:
         return False, "hash mismatch"
 
+    # ── 2. Difficulty target ──────────────────────────────────────────────────
     difficulty_target = str(
         _value(assignment, "difficulty_target", getattr(settings, "DIFFICULTY_TARGET", ""))
     )
     if difficulty_target and not submission.output_hash.startswith(difficulty_target):
         return False, "difficulty not met"
 
+    # ── 3. Benchmark signature present ────────────────────────────────────────
     if not submission.benchmark_signature:
         return False, "missing benchmark"
 
+    # ── 4. Wallet ownership: verify Ed25519 submission signature ──────────────
+    vol_info = await get_volunteer_security_info(settings.DB_PATH, submission.volunteer_id)
+    if vol_info is None:
+        return False, "volunteer not found"
+
+    stored_pubkey, stored_model = vol_info
+
+    if stored_pubkey:
+        signing_msg = _submission_signing_message(submission)
+        try:
+            sig_valid = verify_signature(stored_pubkey, signing_msg, submission.miner_signature)
+        except Exception:
+            sig_valid = False
+        if not sig_valid:
+            return False, "invalid wallet signature"
+
+        # Verify the claimed pubkey matches what's stored
+        if submission.miner_pubkey != stored_pubkey:
+            return False, "pubkey mismatch"
+
+    # ── 5. Model name cross-check ─────────────────────────────────────────────
+    if stored_model and submission.model_name and submission.model_name != stored_model:
+        return False, "model mismatch"
+
+    # ── 6. Canary or minimum output length ────────────────────────────────────
     is_canary = bool(_value(assignment, "is_canary", False))
     canary_task_id = _value(assignment, "canary_task_id")
     if is_canary:

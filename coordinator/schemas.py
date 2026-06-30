@@ -33,6 +33,9 @@ class InferenceSubmission(BaseModel):
     task_id: str
     volunteer_id: str
     miner_wallet: str
+    miner_pubkey: str
+    miner_signature: str
+    model_name: str
     output_text: str
     output_hash: str
     nonce_attempts: int = Field(ge=0)
@@ -49,6 +52,7 @@ class VolunteerRegistration(BaseModel):
 
     volunteer_id: str
     miner_wallet: str
+    miner_pubkey: str
     model_name: str
     vram_gb: float = Field(ge=0)
 
@@ -99,10 +103,12 @@ class YetiBlock(BaseModel):
     difficulty_target: str
     nonce_attempts: int = Field(ge=0)
     miner_wallet: str
+    miner_pubkey: str = ""
     volunteer_id: str
     completion_tokens: int = Field(ge=0)
     prompt_tokens: int = Field(ge=0)
     benchmark_signature: str
+    model_name: str = ""
     zk_proof: str = ""
     miner_reward: float = Field(ge=0)
     treasury_reward: float = Field(ge=0)
