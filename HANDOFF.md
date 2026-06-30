@@ -319,3 +319,19 @@ python yeti_client.py
 `
 
 **cloudflared binary:** soft-yeti/cloudflared.exe (Windows x64, v2026.6.1 — gitignored, not committed)
+---
+
+## Security fixes applied 2026-06-30 (Codex second-opinion findings)
+
+Three critical gaps found by independent code review — fixed before any external tester access:
+
+| Fix | Files | Status |
+|---|---|---|
+| /api/subscription/notify had no auth — anyone could grant free subscriptions | coordinator/main.py | ✅ Now requires X-JClaw-API-Key |
+| 
+once_attempts was volunteer-controlled, directly multiplied reward — unlimited YETI inflation | coordinator/verifier.py | ✅ Capped at MAX_NONCE_ATTEMPTS=500 (900s timeout / ~2s min inference) |
+| JCLAW_API_KEY was empty — /api/generate open to anyone with tunnel URL | coordinator/.env, harness/.env | ✅ Key set (64-char hex, not committed) |
+
+**Test count: 46/46 pass** (was 44; added 2 nonce cap tests).
+
+**Note:** JCLAW_API_KEY is not committed (in .gitignore via coordinator/.env). Volunteers and testers do not need it — only J-Claw (set in harness/.env as YETI_JCLAW_API_KEY) and any system calling /api/subscription/notify.
