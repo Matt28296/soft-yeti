@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import time
 from types import SimpleNamespace
 
@@ -10,6 +11,7 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from cryptography.hazmat.primitives.serialization import Encoding, NoEncryption, PrivateFormat, PublicFormat
 from pydantic import SecretStr
 
+from chain.wallet import sign_message
 from coordinator.database import init_db
 from coordinator.minter import _canonical_json, mint_block
 from coordinator.verifier import verify_submission
@@ -71,11 +73,33 @@ def _settings(tmp_path, difficulty_target: str = "0") -> SimpleNamespace:
     )
 
 
-async def _register_test_volunteer(db_path: str, pubkey: str = "", model_name: str = "") -> None:
-    """Insert a minimal volunteer record into the test DB.
+def _keygen() -> tuple[str, str]:
+    """Generate a test Ed25519 keypair. Returns (privkey_hex, pubkey_hex)."""
+    privkey = Ed25519PrivateKey.generate()
+    pubkey_hex = privkey.public_key().public_bytes(Encoding.Raw, PublicFormat.Raw).hex()
+    privkey_hex = privkey.private_bytes(Encoding.Raw, PrivateFormat.Raw, NoEncryption()).hex()
+    return privkey_hex, pubkey_hex
 
-    Empty pubkey causes verifier to skip signature check (no pubkey stored yet).
-    """
+
+def _sign_submission(submission: SimpleNamespace, privkey_hex: str) -> SimpleNamespace:
+    """Attach a valid Ed25519 signature to a submission in-place."""
+    signing_msg = json.dumps(
+        {
+            "miner_wallet": submission.miner_wallet,
+            "nonce_attempts": submission.nonce_attempts,
+            "output_hash": submission.output_hash,
+            "task_id": submission.task_id,
+            "task_salt": submission.task_salt,
+        },
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    submission.miner_signature = sign_message(privkey_hex, signing_msg)
+    return submission
+
+
+async def _register_test_volunteer(db_path: str, pubkey: str = "", model_name: str = "") -> None:
+    """Insert a minimal volunteer record into the test DB."""
     await init_db(db_path)
     async with aiosqlite.connect(db_path) as db:
         await db.execute(
@@ -90,12 +114,29 @@ async def _register_test_volunteer(db_path: str, pubkey: str = "", model_name: s
 @pytest.mark.asyncio
 async def test_verify_submission_accepts_valid_submission(tmp_path) -> None:
     settings = _settings(tmp_path, difficulty_target="0")
-    await _register_test_volunteer(settings.DB_PATH)
+    privkey_hex, pubkey_hex = _keygen()
+    await _register_test_volunteer(settings.DB_PATH, pubkey=pubkey_hex)
     submission = _mined_submission(prefix="0")
+    submission.miner_pubkey = pubkey_hex
+    _sign_submission(submission, privkey_hex)
     accepted, reason = await verify_submission(submission, _assignment("0"), settings)
 
     assert accepted is True
     assert reason == "ok"
+
+
+@pytest.mark.asyncio
+async def test_verify_submission_rejects_missing_pubkey(tmp_path) -> None:
+    """Volunteers with no registered pubkey are rejected regardless of signature."""
+    settings = _settings(tmp_path, difficulty_target="0")
+    await _register_test_volunteer(settings.DB_PATH, pubkey="")
+    submission = _mined_submission(prefix="0")
+    submission.miner_pubkey = ""
+    submission.miner_signature = ""
+    accepted, reason = await verify_submission(submission, _assignment("0"), settings)
+
+    assert accepted is False
+    assert reason == "volunteer has no registered public key"
 
 
 @pytest.mark.asyncio
@@ -114,8 +155,11 @@ async def test_verify_submission_rejects_hash_mismatch(tmp_path) -> None:
 @pytest.mark.asyncio
 async def test_verify_submission_rejects_canary_mismatch(tmp_path) -> None:
     settings = _settings(tmp_path, difficulty_target="")
-    await _register_test_volunteer(settings.DB_PATH)
+    privkey_hex, pubkey_hex = _keygen()
+    await _register_test_volunteer(settings.DB_PATH, pubkey=pubkey_hex)
     submission = _mined_submission(prefix="", output_base="wrong canary output")
+    submission.miner_pubkey = pubkey_hex
+    _sign_submission(submission, privkey_hex)
     assignment = _assignment("", is_canary=True, canary_task_id="canary-001")
 
     accepted, reason = await verify_submission(submission, assignment, settings)
@@ -209,9 +253,12 @@ async def test_verify_submission_accepts_nonce_at_maximum(tmp_path) -> None:
     from coordinator.verifier import MAX_NONCE_ATTEMPTS
 
     settings = _settings(tmp_path, difficulty_target="")
-    await _register_test_volunteer(settings.DB_PATH)
+    privkey_hex, pubkey_hex = _keygen()
+    await _register_test_volunteer(settings.DB_PATH, pubkey=pubkey_hex)
     submission = _mined_submission(prefix="")
     submission.nonce_attempts = MAX_NONCE_ATTEMPTS
+    submission.miner_pubkey = pubkey_hex
+    _sign_submission(submission, privkey_hex)
 
     accepted, reason = await verify_submission(submission, _assignment(""), settings)
 
@@ -255,3 +302,18 @@ async def test_mint_block_generates_ed25519_signature_and_block_hash(tmp_path) -
     assert len(block["block_hash"]) == 64
     assert block["miner_reward"] == pytest.approx(0.0099)
     assert block["treasury_reward"] == pytest.approx(0.0011)
+
+
+@pytest.mark.asyncio
+async def test_registry_deactivates_after_max_failures() -> None:
+    """Volunteers are deactivated from the healthy pool after MAX_FAILURE_COUNT failures."""
+    from coordinator.registry import MAX_FAILURE_COUNT, VolunteerRegistry
+
+    reg = VolunteerRegistry()
+    await reg.register_seen("vol-001")
+    assert len(reg.healthy_volunteers()) == 1
+
+    for _ in range(MAX_FAILURE_COUNT):
+        await reg.mark_failure("vol-001")
+
+    assert len(reg.healthy_volunteers()) == 0

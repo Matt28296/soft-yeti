@@ -126,8 +126,6 @@ def _nonce_search(
     max_tokens = int(assignment.get("max_tokens", 512))
 
     nonce_attempts = 0
-    total_prompt_tokens = 0
-    total_completion_tokens = 0
 
     while not _STOP_EVENT.is_set():
         nonce_attempts += 1
@@ -139,13 +137,15 @@ def _nonce_search(
             logger.warning("Inference attempt %d failed for task %s: %s", nonce_attempts, task_id, exc)
             return False
 
-        total_prompt_tokens += pt
-        total_completion_tokens += ct
         oh = _output_hash(output_text, task_id, task_salt)
 
         if _meets_difficulty(oh, difficulty_target):
             signing_msg = _submission_signing_message(task_id, oh, wallet_address, nonce_attempts, task_salt)
             submission_sig = sign_message(privkey_hex, signing_msg)
+            # Submit only the WINNING attempt's token counts.
+            # The reward formula is: ct × REWARD_RATE × nonce_attempts, so the
+            # multiplier already compensates for failed attempts — accumulating
+            # tokens across all attempts and multiplying would inflate the reward.
             payload = {
                 "task_id": task_id,
                 "volunteer_id": cfg.volunteer_id,
@@ -157,8 +157,8 @@ def _nonce_search(
                 "output_hash": oh,
                 "nonce_attempts": nonce_attempts,
                 "benchmark_signature": bench_sig,
-                "prompt_tokens": total_prompt_tokens,
-                "completion_tokens": total_completion_tokens,
+                "prompt_tokens": pt,
+                "completion_tokens": ct,
                 "task_salt": task_salt,
             }
             try:
@@ -189,6 +189,17 @@ def _nonce_search(
     return False
 
 
+# ── Backoff ───────────────────────────────────────────────────────────────────
+
+_BACKOFF_INITIAL_S = 5.0
+_BACKOFF_MAX_S = 120.0
+
+
+def _backoff_delay(fail_count: int) -> float:
+    """Exponential backoff: 5s → 10s → 20s → … → 120s cap."""
+    return min(_BACKOFF_INITIAL_S * (2 ** fail_count), _BACKOFF_MAX_S)
+
+
 # ── Background loops ──────────────────────────────────────────────────────────
 
 def heartbeat_loop(cfg: YetiConfig) -> None:
@@ -210,6 +221,7 @@ def inference_loop(cfg: YetiConfig, wallet_address: str, miner_pubkey: str, priv
     """Poll for tasks and run the PoI nonce search loop."""
     headers = {"X-Yeti-API-Key": f"{cfg.volunteer_id}:{cfg.api_key}"}
     logger.info("Inference loop started (volunteer=%s model=%s)", cfg.volunteer_id, cfg.model_name)
+    fail_count = 0
 
     while not _STOP_EVENT.is_set():
         try:
@@ -227,6 +239,7 @@ def inference_loop(cfg: YetiConfig, wallet_address: str, miner_pubkey: str, priv
             assignment = resp.json()
             logger.info("Task received: %s", assignment.get("task_id"))
             _nonce_search(cfg, assignment, bench_sig, wallet_address, miner_pubkey, privkey_hex)
+            fail_count = 0
 
         except requests.HTTPError as exc:
             if exc.response is not None and exc.response.status_code in (401, 403):
@@ -234,10 +247,12 @@ def inference_loop(cfg: YetiConfig, wallet_address: str, miner_pubkey: str, priv
                 _STOP_EVENT.set()
                 return
             logger.warning("HTTP error in inference loop: %s", exc)
-            _STOP_EVENT.wait(5.0)
+            _STOP_EVENT.wait(_backoff_delay(fail_count))
+            fail_count += 1
         except Exception as exc:
             logger.warning("Inference loop error: %s", exc)
-            _STOP_EVENT.wait(5.0)
+            _STOP_EVENT.wait(_backoff_delay(fail_count))
+            fail_count += 1
 
 
 # ── Lifecycle ─────────────────────────────────────────────────────────────────

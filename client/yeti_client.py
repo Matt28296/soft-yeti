@@ -11,7 +11,10 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import getpass
+import json
 import logging
+import os
 import secrets
 import sys
 import time
@@ -38,17 +41,32 @@ def _setup(cfg_path: Path) -> None:
     """Interactive first-run setup: generate wallet, register volunteer, save config."""
     print("\n=== Soft Yeti Setup ===\n")
     coordinator_url = input("Coordinator URL [http://localhost:8000]: ").strip() or "http://localhost:8000"
-    model_name = input("Ollama model name [qwen2.5-coder:7b-instruct]: ").strip() or "qwen2.5-coder:7b-instruct"
+
+    # setup_volunteer.ps1 passes detected GPU defaults via env vars
+    default_model = os.environ.get("YETI_DETECTED_MODEL", "qwen2.5-coder:7b-instruct")
+    default_vram  = os.environ.get("YETI_DETECTED_VRAM", "8.0")
+
+    model_name = input(f"Ollama model name [{default_model}]: ").strip() or default_model
     try:
-        vram_gb_str = input("GPU VRAM in GB [8.0]: ").strip() or "8.0"
+        vram_gb_str = input(f"GPU VRAM in GB [{default_vram}]: ").strip() or default_vram
         vram_gb = float(vram_gb_str)
     except ValueError:
-        vram_gb = 8.0
+        vram_gb = float(default_vram) if default_vram.replace(".", "", 1).isdigit() else 8.0
 
     wallet_path = Path.home() / ".soft_yeti" / "wallet.json"
     print(f"\nGenerating Ed25519 wallet → {wallet_path}")
+    print("Set a passphrase to encrypt the wallet file (recommended).")
+    print("Press Enter twice to skip encryption (not recommended).")
+    while True:
+        passphrase = getpass.getpass("Wallet passphrase: ")
+        confirm = getpass.getpass("Confirm passphrase: ")
+        if passphrase == confirm:
+            break
+        print("Passphrases do not match — try again.")
+    if not passphrase:
+        print("Warning: wallet will be stored unencrypted.")
     wallet = generate_wallet()
-    save_wallet(wallet, wallet_path)
+    save_wallet(wallet, wallet_path, passphrase=passphrase)
     print(f"Wallet address: {wallet['address']}")
 
     volunteer_id = f"volunteer-{secrets.token_hex(6)}"
@@ -178,7 +196,12 @@ def main() -> None:
         print(f"Wallet not found at {wallet_path}. Run:  python yeti_client.py --setup")
         sys.exit(1)
 
-    wallet = load_wallet(wallet_path)
+    raw_payload = json.loads(wallet_path.read_text(encoding="utf-8"))
+    if raw_payload.get("encrypted"):
+        wallet_passphrase = getpass.getpass("Wallet passphrase: ")
+    else:
+        wallet_passphrase = ""
+    wallet = load_wallet(wallet_path, passphrase=wallet_passphrase)
     wallet_address = wallet["address"]
     miner_pubkey = wallet["pubkey_hex"]
     privkey_hex = wallet["privkey_hex"]

@@ -18,3 +18,7 @@ cloudflared.log
 # Wallet files
 .soft_yeti/
 *.soft_yeti
+coordinator/treasury_wallet.json
+
+# Brain-authored architecture notes (live in The-Brain, not this repo)
+_BRAIN_NOTE_*.md

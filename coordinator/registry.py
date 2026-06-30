@@ -26,6 +26,9 @@ class VolunteerRecord:
     active: bool = True
 
 
+MAX_FAILURE_COUNT = 10
+
+
 class VolunteerRegistry:
     """Tracks volunteer heartbeats and health in memory."""
 
@@ -78,7 +81,7 @@ class VolunteerRegistry:
             return True
 
     async def mark_failure(self, volunteer_id: str) -> bool:
-        """Record a failed volunteer action without removing the volunteer."""
+        """Record a failed volunteer action; deactivate after too many failures."""
         now = utc_timestamp()
         async with self._lock:
             record = self._volunteers.get(volunteer_id)
@@ -86,6 +89,8 @@ class VolunteerRegistry:
                 return False
             record.failure_count += 1
             record.last_failure = now
+            if record.failure_count >= MAX_FAILURE_COUNT:
+                record.active = False
             return True
 
     def healthy_volunteers(self, ttl: float | None = None) -> list[VolunteerRecord]:

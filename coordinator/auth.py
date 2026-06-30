@@ -12,34 +12,54 @@ from coordinator.schemas import VolunteerRegistration
 
 
 async def register_volunteer(db_path: str, reg: VolunteerRegistration) -> str:
-    """Register a volunteer and return the one-time plaintext API key."""
+    """Register a volunteer and return the one-time plaintext API key.
 
+    Re-registration after a coordinator restart is allowed when miner_wallet and
+    miner_pubkey match the stored values — only the api_key is rotated.
+    Attempting to change wallet or pubkey for an existing volunteer_id raises
+    ValueError (prevents identity hijacking via log-scraped volunteer IDs).
+    """
     raw_key = secrets.token_hex(32)
     api_key_hash = bcrypt.hashpw(raw_key.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
 
     async with aiosqlite.connect(db_path) as db:
-        await db.execute(
-            """
-            INSERT OR REPLACE INTO volunteers (
-                volunteer_id,
-                miner_wallet,
-                api_key_hash,
-                model_name,
-                vram_gb,
-                miner_pubkey,
-                registered_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                reg.volunteer_id,
-                reg.miner_wallet,
-                api_key_hash,
-                reg.model_name,
-                reg.vram_gb,
-                reg.miner_pubkey,
-                time.time(),
-            ),
+        cursor = await db.execute(
+            "SELECT miner_wallet, miner_pubkey FROM volunteers WHERE volunteer_id = ?",
+            (reg.volunteer_id,),
         )
+        existing = await cursor.fetchone()
+
+        if existing is not None:
+            stored_wallet, stored_pubkey = existing
+            if reg.miner_wallet != stored_wallet or reg.miner_pubkey != (stored_pubkey or ""):
+                raise ValueError(
+                    f"volunteer_id {reg.volunteer_id!r} is already registered "
+                    "with a different wallet or public key"
+                )
+            # Same identity re-registering (e.g. after coordinator restart) — rotate key only
+            await db.execute(
+                "UPDATE volunteers SET api_key_hash = ?, model_name = ?, vram_gb = ?, "
+                "registered_at = ? WHERE volunteer_id = ?",
+                (api_key_hash, reg.model_name, reg.vram_gb, time.time(), reg.volunteer_id),
+            )
+        else:
+            await db.execute(
+                """
+                INSERT INTO volunteers (
+                    volunteer_id, miner_wallet, api_key_hash,
+                    model_name, vram_gb, miner_pubkey, registered_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    reg.volunteer_id,
+                    reg.miner_wallet,
+                    api_key_hash,
+                    reg.model_name,
+                    reg.vram_gb,
+                    reg.miner_pubkey,
+                    time.time(),
+                ),
+            )
         await db.commit()
 
     return raw_key

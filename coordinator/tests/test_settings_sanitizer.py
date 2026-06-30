@@ -1,8 +1,11 @@
 import pytest
 from fastapi import HTTPException
+from pydantic import ValidationError
 
 from coordinator.config import Settings
-from coordinator.sanitizer import MAX_PROMPT_LENGTH, sanitize_prompt
+from coordinator.sanitizer import MAX_OUTPUT_LENGTH, MAX_PROMPT_LENGTH, sanitize_output, sanitize_prompt
+from coordinator.schemas import InferenceSubmission
+from coordinator.task_queue import TaskQueue
 
 
 @pytest.fixture
@@ -117,3 +120,78 @@ async def test_sanitize_prompt_strips_clean_prompt():
     sanitized = await sanitize_prompt("  Refactor this function for readability.  ", "code")
 
     assert sanitized == "Refactor this function for readability."
+
+
+# ── sanitize_output tests ─────────────────────────────────────────────────────
+
+def test_sanitize_output_strips_null_bytes():
+    assert sanitize_output("hello\x00world") == "helloworld"
+
+
+def test_sanitize_output_strips_control_chars_keeps_newline_tab():
+    # \x07=BEL \x1b=ESC — stripped. \n and \t — kept.
+    assert sanitize_output("line1\x07\x1bline2\nline3\ttab") == "line1line2\nline3\ttab"
+
+
+def test_sanitize_output_truncates_to_max_length():
+    long_output = "x" * (MAX_OUTPUT_LENGTH + 500)
+    result = sanitize_output(long_output)
+    assert len(result) == MAX_OUTPUT_LENGTH
+
+
+def test_sanitize_output_passes_clean_text():
+    text = "The answer is 42.\nNo issues here."
+    assert sanitize_output(text) == text
+
+
+# ── nonce_attempts schema validation ─────────────────────────────────────────
+
+def _valid_submission(**overrides) -> dict:
+    base = dict(
+        task_id="t1",
+        volunteer_id="v1",
+        miner_wallet="YETI1abc",
+        miner_pubkey="aa" * 32,
+        miner_signature="bb" * 64,
+        model_name="qwen2.5-coder:7b-instruct",
+        output_text="hello world output",
+        output_hash="abc123",
+        nonce_attempts=1,
+        benchmark_signature="bench-ok",
+        prompt_tokens=8,
+        completion_tokens=16,
+        task_salt="salt123",
+    )
+    base.update(overrides)
+    return base
+
+
+def test_nonce_attempts_zero_rejected():
+    with pytest.raises(ValidationError):
+        InferenceSubmission(**_valid_submission(nonce_attempts=0))
+
+
+def test_nonce_attempts_one_accepted():
+    sub = InferenceSubmission(**_valid_submission(nonce_attempts=1))
+    assert sub.nonce_attempts == 1
+
+
+# ── Canary temperature fix ────────────────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_canary_assignment_forces_temperature_zero(default_settings):
+    """A canary task must always be assigned temperature=0.0 regardless of the
+    parent task temperature, because expected outputs are calibrated at temp=0."""
+    queue = TaskQueue()
+    # Force canary injection on every call by setting CANARY_RATE=1.0
+    default_settings.CANARY_RATE = 1.0
+    default_settings.DIFFICULTY_TARGET = ""
+
+    from coordinator.schemas import TaskRequest
+    task = TaskRequest(task_id="t-canary", task_type="qa", prompt="ignored", max_tokens=64)
+
+    # Build assignment with a non-zero temperature — canary must override it
+    assignment = queue._build_assignment(task, default_settings, inject_canary=True)
+
+    assert assignment.is_canary is True
+    assert assignment.temperature == 0.0

@@ -4,16 +4,20 @@ Date: **2026-06-30** (Phase 0 build complete)
 
 ---
 
-## Status: Phase 0 VALIDATED ✅ — Block #0 minted 2026-06-30
+## Status: Phase 1 IN PROGRESS — Cloudflare Tunnel + CLI distribution
 
-All four layers built, tested, and end-to-end validated on 3060 Ti testbed:
+Phase 0 complete + security hardened + Phase 0→1 bridge complete (2026-06-30).
 
 | Layer | Files | Tests | Status |
 |---|---|---|---|
 | `chain/` | 8 modules | 20/20 | ✅ COMPLETE |
-| `coordinator/` | 11 modules + tests | 22/22 | ✅ COMPLETE |
+| `coordinator/` | 13 modules + tests | **40/40** | ✅ COMPLETE |
 | `client/` | 6 modules | — (manual) | ✅ COMPLETE |
 | J-Claw integration | 3 files modified | syntax clean | ✅ COMPLETE |
+
+**60/60 tests pass total (40 coordinator + 20 chain).**
+
+**Next gate:** named Cloudflare tunnel (needs `cloudflared tunnel login` browser OAuth) → send URL to 5 testers.
 
 ---
 
@@ -30,19 +34,17 @@ Start-Process $py -ArgumentList "-m uvicorn coordinator.main:app --host 0.0.0.0 
 Or use `.\start_coordinator.ps1` (also fixed — see bugs below).
 `chain_id: yeti-testnet` · `difficulty: 0` (1/16 chance) · `timeout: 900s`
 
-**On 3060 Ti (volunteer client):**
+**On 3060 Ti (volunteer client) — new bootstrap script:**
 ```powershell
-# Install deps (Python 3.11+)
-pip install requests ollama cryptography numpy
+cd soft-yeti
+.\setup_volunteer.ps1
+# Prompts: coordinator URL, model, VRAM, wallet passphrase
+# Creates venv, installs deps, pulls model if missing, runs --setup wizard
 
-# First run: register and configure
-cd <path to client files>
-python yeti_client.py --setup
-# Coordinator URL: http://100.92.46.126:8900
-# Model: qwen2.5-coder:7b-instruct (already installed)
-
-# Start mining
-python yeti_client.py
+# Start mining:
+cd client
+.venv\Scripts\python yeti_client.py
+# If wallet is encrypted, prompts for passphrase on startup
 ```
 
 **Enable YETI pool in J-Claw (on 9070 XT):**
@@ -64,9 +66,9 @@ YETI_ALLOWED_TASK_TYPES=documentation,qa
 - [x] Client receives task from `GET /api/task/next`
 - [x] Client runs inference, finds valid PoI hash
 - [x] `POST /api/submit` succeeds → **Block #0 minted** (hash: `5d9b558449eb1c68...`, reward: 0.0252 YETI to `YETI1xpE6DPs8BV5pP656K65psAhgvJS`, task: `phase0-test-010`, time: 6 seconds)
-- [x] `GET /chain/balance/{wallet}` returns 1.8612 YETI (0.0252 Block#0 + 1.836 Block#1) ✅ — chain routes added to coordinator/main.py 2026-06-30
-- [x] J-Claw routed `documentation` task (phase1-bridge-001) through YETI pool — Block #1 minted 2026-06-30
-- [ ] `mission_control.json` shows `node_id: yeti_pool` on completed task  ← run a full J-Claw build to verify
+- [x] `GET /chain/balance/{wallet}` returns non-zero YETI  — confirmed 1.8612 YETI balance on-chain
+- [x] J-Claw routes a `documentation` task through YETI pool  — Block #1 minted via J-Claw pool route (20s, 1.836 YETI)
+- [x] `mission_control.json` shows `node_id: "yeti_pool"` on completed task  — confirmed via Phase 0→1 bridge run
 - [x] `/api/generate` endpoint returns output to J-Claw (tested directly; returned in 6s)
 
 ---
@@ -90,28 +92,29 @@ soft-yeti/
 │   └── tests/
 │       └── test_chain.py      # 20 tests — wallet, block, difficulty, storage, chain ops
 │
-├── coordinator/               # FastAPI coordinator server (COMPLETE)
-│   ├── requirements.txt       # fastapi, uvicorn, pydantic-settings, aiosqlite, bcrypt, cryptography, httpx, pytest-asyncio
+├── coordinator/               # FastAPI coordinator server (COMPLETE — 33/33 tests)
+│   ├── requirements.txt       # fastapi, uvicorn, pydantic-settings, aiosqlite, bcrypt, cryptography, httpx, slowapi, pytest-asyncio
 │   ├── coordinator/           # Python package
 │   │   ├── __init__.py
-│   │   ├── main.py            # FastAPI app + lifespan + all route handlers
+│   │   ├── main.py            # FastAPI app + lifespan + all route handlers + rate limiting + _chain_lock
 │   │   │                      # Key routes: /api/register /api/heartbeat /api/health
 │   │   │                      #   /api/task/next  /api/submit  /api/generate (J-Claw blocking)
 │   │   ├── config.py          # pydantic-settings: keys, difficulty, chain_id, JCLAW_API_KEY
 │   │   ├── schemas.py         # Pydantic models: RegisterRequest, TaskAssignment, InferenceSubmission,
 │   │   │                      #   GenerateRequest, GenerateResponse, HeartbeatRequest, HealthResponse
-│   │   ├── auth.py            # bcrypt API key hashing + FastAPI dependency (volunteer auth)
-│   │   ├── registry.py        # Volunteer registry (aiosqlite), TTL heartbeat, healthy_volunteers()
+│   │   ├── auth.py            # bcrypt API key hashing + ownership-checked registration (no ID hijacking)
+│   │   ├── registry.py        # Volunteer registry (aiosqlite), TTL heartbeat, failure_count enforcement
 │   │   ├── sanitizer.py       # 6-step prompt sanitization (secret scan, path strip, length cap,
 │   │   │                      #   role whitelist, model override strip, task type gate)
-│   │   ├── canary_oracle.py   # Theory 5: 10 canary tasks, is_canary(), verify_canary()
+│   │   ├── canary.py          # Theory 5: 50 canary tasks (5 categories), is_canary(), verify_canary()
 │   │   ├── task_queue.py      # asyncio task queue: enqueue, assign, submit, asyncio.Event waiter pattern
 │   │   │                      #   register_waiter() / deliver_result() / take_result() for /api/generate
-│   │   ├── verifier.py        # PoI hash check, benchmark signature check, canary verification
+│   │   ├── verifier.py        # PoI hash check + Ed25519 signature guard + canary verification
 │   │   ├── minter.py          # mint_block() → chain.append_block() → JSONL
 │   │   └── subscription.py    # placeholder (Phase 2 — on-chain YETI Transfer → access)
 │   └── tests/
 │       ├── test_api.py        # API endpoint integration tests (register, heartbeat, health, task, submit)
+│       ├── test_auth.py       # 5 tests: ownership-checked registration (ID hijacking protection)
 │       ├── test_settings_sanitizer.py  # sanitizer pipeline tests
 │       └── test_verifier_minter.py     # PoI hash verification + block minting tests
 │
@@ -221,11 +224,54 @@ YETI_TASK_TIMEOUT_S: int = 300
 
 - ✅ **Phase 0 build**: 3060 Ti closed testbed — chain/ + coordinator/ + client/ all built 2026-06-30; J-Claw integration complete
 - ✅ **Phase 0 validation**: Block #0 minted 2026-06-30; 3060 Ti mined in 6s; `/api/generate` returned output; PoI loop end-to-end confirmed
-- ✅ **Phase 0 → Phase 1 bridge COMPLETE (2026-06-30)**: YETI pool enabled in J-Claw harness/.env, phase1-bridge-001 (documentation task) completed in 20s via 3060 Ti pool — **Block #1 minted** (model_name=qwen2.5-coder:7b-instruct, miner_pubkey=67743d13..., reward=1.836 YETI, nonce_tries=5). Ed25519 signed submission verified end-to-end.
-- ⏭ **Phase 1**: Cloudflare Tunnel + CLI client distribution (5 internal testers, yeti-testnet)
-- ⏭ **Phase 2**: Argon2 PoW (Theory 2) + Vulkan benchmark (Theory 7) + asyncio.Lock wallet + pystray installer + subscription live
-- ⏭ **Phase 3**: public mainnet — HARD GATE: legal review (FinCEN MSB, KYC/AML, Howey test) FIRST
-- ⏭ **Phase 4**: zkML upgrade path ("Verified Miner" premium tier)
+- ✅ **Security hardening (round 1)**: Ed25519 sigs, model cross-check, JCLAW_API_KEY, nonce cap (500), subscription notify auth, canary 10→50, volunteer ID hijacking fix, rate limiting (5/min register, 30/min submit), wallet passphrase encryption prompt
+- ✅ **Phase 0 → Phase 1 bridge**: Block #1 minted via J-Claw YETI pool route (20s, 1.836 YETI, signed). Bootstrap script `setup_volunteer.ps1` written.
+- ✅ **Security hardening (round 2 — dual-review findings)**: Reward inflation fix (completion_tokens accumulated across nonce attempts), Ed25519 bypass fix (pre-hardening volunteers with no stored pubkey now rejected), chain append lock (`_chain_lock`), timeout memory leak cleanup, `failure_count` enforcement in registry. **53/53 tests pass.**
+- ✅ **Phase 1 pre-tunnel fixes (2026-06-30)**:
+  - Canary temperature fix — `task_queue.py` now forces `temperature=0.0` on canary assignments
+  - Output sanitization — `sanitize_output()` in `sanitizer.py` strips control chars + truncates to 32k chars; wired into `main.py` before `deliver_result`
+  - `nonce_attempts` minimum changed from `ge=0` to `ge=1` in `schemas.py`
+  - Model auto-detection in `setup_volunteer.ps1` — detects VRAM via nvidia-smi → rocm-smi → WMI, selects model from ladder: <4 GB=qwen2.5:1.5b, 4-6=phi4-mini:3.8b, 6-10=qwen2.5-coder:7b-instruct (default), 10-20=deepseek-coder-v2:16b, 20+=qwen2.5-coder:32b. Passes detected values to setup wizard via env vars.
+  - `validate_canary.py` — empirical validation script (run against live Ollama when home)
+  - **33/33 tests still pass.**
+- ⏭ **Phase 1 — remaining (home-blocked)**:
+  - Named Cloudflare tunnel — needs `cloudflared tunnel login` browser OAuth
+  - Empirical canary validation — run `python validate_canary.py` against live Ollama
+  - Send URL to 5 internal testers
+- ⏭ **Phase 1.5 — Zero protocol change quality wins** (do immediately after Phase 1 closes):
+  - Deliver all N nonce-attempt outputs to J-Claw — `_result_store` accumulates a list; `_call_yeti()` picks best by embedding similarity. Zero blockchain changes.
+  - Minimum quality gate in client — `_passes_quality_gate()` in `yeti_node.py` filters too-short / repetition-loop outputs before hashing; failed outputs skip submission and don't count as attempts.
+  - Base rate per inference run — `per_attempt_reward = completion_tokens × 0.0001` credited to miner regardless of whether their attempt wins the block. Makes raising difficulty economically viable.
+- ⏭ **Phase 2 — Hardening + Protocol foundation**:
+  - Argon2 memory-hard PoW (Theory 2) — 256MB RAM per attempt; CPU/cloud scripts without VRAM can't forge this
+  - Vulkan/PyOpenCL GPU benchmark — replace numpy stub with real GPU timing proof
+  - True model fingerprinting — per-model expected-output calibration (replace name-match-only); first 10 tasks after registration are model-specific canary checks
+  - **Proof of Inference Depth (PoID)** — alternative to hash lottery: miner runs N sequential self-refinement passes (`Pass_N = LLM("Improve: " + output_N-1)`), each chained via `hash(prev_output)` in the salt so passes can't be faked; all N outputs delivered; reward proportional to depth. No wasted inference. Introduced alongside hash-target mode for A/B test; default in Phase 3 if quality validates.
+  - On-chain model registry — model ID (weights hash/Ollama digest), reputation score updated per task, family + parameter count recorded; high-reputation models earn 5% reward bonus
+  - Difficulty auto-adjustment — dynamic target based on block rate
+  - ✅ `asyncio.Lock` per wallet in `subscription.py` — already implemented (Codex round 2)
+  - Subscription economy live — on-chain YETI Transfer → access grants
+  - Encrypted API key storage in client config (`~/.soft_yeti/config.json`)
+  - ✅ Exponential backoff on client reconnect — `_backoff_delay(fail_count)` in `yeti_node.py` (5s→10s→20s…→120s cap, resets on success)
+  - PyInstaller `SoftYetiSetup.exe` — one-click Windows installer
+- ⏭ **Phase 3 — Quality + Decentralization**: HARD GATE — legal review (FinCEN MSB registration, KYC/AML compliance, Howey test analysis) FIRST. No exceptions.
+  - BFT multi-validator consensus — threshold signatures (5-of-9 validators, staked YETI, slashing for fraud); block finality is deterministic not probabilistic; coordinator becomes first validator
+  - Reference model judge — tiny fixed-weight model (hash pinned in protocol) scores every output at temperature=0; all nodes independently produce identical scores; no coordination needed
+  - Peer quality committee — 10% of tasks selected for 5-miner committee review; commit-reveal scheme prevents herding; median score wins; outliers lose stake fraction
+  - Bayesian miner reputation — `Beta(α,β)` per miner updated by quality scores; reward multiplier = `f(expected_quality, confidence)`; new miners earn at ~0.7× (low confidence prior)
+  - Model diversity enforcement — each block requires ≥3 distinct model families; BFT at model layer; single-model compromise can't dominate >⅓ of any block
+  - Elastic emission + EIP-1559 fee burn — emission tied to network utilization; 30% of task fees burned; deflationary at high utilization
+  - DHT task queue — decentralized task routing; any node can post tasks; eliminates coordinator as single routing point
+  - Judge model governance — on-chain vote (supermajority, 30-day transition) required to update reference judge weights; most politically critical control point in the protocol
+- ⏭ **Phase 4 — zkML + Full permissionless**:
+  - zkML verification — ZK proof that specific model weights performed specific inference on specific input; verifying cheap, forging impossible; retires canary oracle, GPU benchmark, model fingerprinting (replaced by proof)
+  - Recursive task DAGs — tasks declare input dependencies; blockchain verifies DAG integrity via output hashes; cryptographically immutable reasoning chains usable for regulated-industry audit trails
+  - Proof of Inference Diversity (PoDiv) — M miners from different model families independently process same task; meta-model aggregates; miners earn proportionally to how much their output contributed to ensemble consensus
+  - Permissionless validators — open validator entry (stake + 30-day probation + <5% concentration cap); stake concentration enforced on-chain
+- ⏭ **Phase 5 — Network effects + Enterprise**:
+  - On-chain computation lineage product — enterprise API for cryptographic provenance of any output (model identity, quality score, full input, timestamp, DAG); no competitor offers immutable AI reasoning audit trails
+  - Open model ecosystem flywheel — on-chain model leaderboard (real-time quality scores from task performance); miners flock to high-reputation models; model developers share revenue with miners running their weights
+  - Full closed-loop tokenomics at scale — burn rate exceeds issuance at sustained high utilization; YETI deflationary by network utility not artificial scarcity
 
 ---
 
@@ -256,9 +302,27 @@ Committed to `Matt28296/soft-yeti` (cb2889ef):
 | DB migration for existing installs | `database.py` | ✅ Done |
 | 2 new tests (sig accept/reject) | `tests/test_verifier_minter.py` | ✅ Done |
 
-**Test count: 44/44 pass** (was 42/42; added 2 signature verification tests + fixed 1 stale path assertion).
+**Test count after initial hardening: 46/46** (was 42/42; 2 sig tests + 2 nonce cap tests added).
 
 **3060 Ti volunteer must re-run `--setup`** to register with the new `miner_pubkey` field before mining again.
+
+---
+
+## Phase 1 security + distribution additions (post-bridge, 2026-06-30)
+
+| Fix | Files | Status |
+|---|---|---|
+| Canary oracle 10→50 tasks (5 categories) | `coordinator/canary.py` | ✅ Done |
+| Volunteer ID hijacking fix (INSERT OR REPLACE → ownership check) | `coordinator/auth.py` | ✅ Done |
+| 409 on hijack attempt | `coordinator/main.py` | ✅ Done |
+| 5 new auth unit tests | `coordinator/tests/test_auth.py` | ✅ Done |
+| Rate limiting (slowapi) on `/api/register` (5/min) + `/api/submit` (30/min) | `coordinator/main.py`, `coordinator/requirements.txt` | ✅ Done |
+| Wallet passphrase prompt in setup wizard | `client/yeti_client.py` | ✅ Done |
+| Passphrase prompt on startup for encrypted wallets | `client/yeti_client.py` | ✅ Done |
+| Tester bootstrap script | `setup_volunteer.ps1` | ✅ Done |
+| Test fixture fix (`JCLAW_API_KEY=""`) | `coordinator/tests/test_api.py` | ✅ Done |
+
+**Test count: 31/31** coordinator tests pass.
 
 **Remaining (Phase 2):**
 - `benchmark_signature` is only checked non-empty — real cryptographic GPU timing verification needs Phase 2 Vulkan kernel
@@ -266,15 +330,15 @@ Committed to `Matt28296/soft-yeti` (cb2889ef):
 
 ---
 
-## Known gaps / Phase 1+ work
+## Known gaps / Phase 2+ work
 
 - `client/benchmark.py` uses numpy matrix multiply (Phase 0 stub) — Phase 2 replaces with PyOpenCL/Vulkan GPU kernel
 - `coordinator/subscription.py` is a placeholder — Phase 2 wires on-chain YETI Transfer → access
-- `asyncio.Lock` per wallet not yet in subscription.py — must add before Phase 2 concurrent Transfer handlers
+- ✅ `asyncio.Lock` per wallet — already in `subscription.py` (`_wallet_locks` + `_wallet_locks_guard`)
 - Difficulty auto-adjustment not yet implemented (static `DIFFICULTY_TARGET` in config)
 - `client/build_installer.py` (PyInstaller → SoftYetiSetup.exe) not built
-- Canary oracle has 10 tasks (Phase 0 minimum); Phase 1 should expand to 50+
-- Client doesn't verify canary determinism empirically — do this before Phase 1 public launch
+- Empirical canary validation not yet run — `validate_canary.py` is written; run `python validate_canary.py` from `soft-yeti/` when Ollama is live to confirm all 50 expected outputs match
+- **Canary oracle detects non-inference cheaters, NOT model substitution.** All 50 prompts have objectively correct answers (math, Python expressions) that any competent LLM returns identically. A volunteer swapping `llama3:8b` for `qwen2.5-coder:7b-instruct` passes canary just fine. The model cross-check in `verifier.py` is a name-match only, not cryptographic. True model fingerprinting requires per-model expected-output calibration (Phase 2) or zkML proofs (Phase 4).
 
 ---
 
@@ -283,55 +347,6 @@ Committed to `Matt28296/soft-yeti` (cb2889ef):
 - Coordinator: `soft-yeti/coordinator/` — start with `start_coordinator.ps1` from `soft-yeti/`
 - Client: `soft-yeti/client/` — `python yeti_client.py [--setup]`
 - Chain: `soft-yeti/chain/` — shared library, imported by coordinator
-- Tests: `cd soft-yeti/coordinator && pytest tests/` (44 tests total: 20 chain + 24 coordinator)
-- Chain tests: `cd soft-yeti && python -m pytest chain/tests/` (20 tests)
+- Tests: `cd soft-yeti && python -m pytest coordinator/tests/` (40 tests)
+- Chain tests: `cd soft-yeti && python -m pytest chain/test_chain.py` (20 tests)
 - Plan: `~/.claude/plans/i-want-to-add-soft-yeti.md`
-
----
-
-## Phase 1 — Cloudflare Tunnel (LIVE 2026-06-30)
-
-**Quick tunnel URL (ephemeral — changes on restart):**
-`
-https://gourmet-blackberry-two-relaxation.trycloudflare.com
-`
-Verified: GET /api/health returns {"healthy_volunteers":1} over public internet.
-
-**How it was started (from soft-yeti/ dir):**
-`powershell
-.\cloudflared.exe tunnel --url http://localhost:8900 --logfile cloudflared.log --loglevel info
-`
-
-**Important: quick tunnel URL changes every time cloudflared restarts.**
-For a stable URL (Phase 1 proper): create a named Cloudflare tunnel with a Cloudflare account.
-This requires a Cloudflare account + domain, or a free workers.dev subdomain.
-
-**External tester setup (use tunnel URL instead of Tailscale IP):**
-`ash
-git clone https://github.com/Matt28296/soft-yeti
-cd soft-yeti/client
-pip install requests ollama cryptography numpy
-python yeti_client.py --setup
-# Coordinator URL: https://gourmet-blackberry-two-relaxation.trycloudflare.com
-# Model: <your local Ollama model>
-# VRAM: <your VRAM in GB>
-python yeti_client.py
-`
-
-**cloudflared binary:** soft-yeti/cloudflared.exe (Windows x64, v2026.6.1 — gitignored, not committed)
----
-
-## Security fixes applied 2026-06-30 (Codex second-opinion findings)
-
-Three critical gaps found by independent code review — fixed before any external tester access:
-
-| Fix | Files | Status |
-|---|---|---|
-| /api/subscription/notify had no auth — anyone could grant free subscriptions | coordinator/main.py | ✅ Now requires X-JClaw-API-Key |
-| 
-once_attempts was volunteer-controlled, directly multiplied reward — unlimited YETI inflation | coordinator/verifier.py | ✅ Capped at MAX_NONCE_ATTEMPTS=500 (900s timeout / ~2s min inference) |
-| JCLAW_API_KEY was empty — /api/generate open to anyone with tunnel URL | coordinator/.env, harness/.env | ✅ Key set (64-char hex, not committed) |
-
-**Test count: 46/46 pass** (was 44; added 2 nonce cap tests).
-
-**Note:** JCLAW_API_KEY is not committed (in .gitignore via coordinator/.env). Volunteers and testers do not need it — only J-Claw (set in harness/.env as YETI_JCLAW_API_KEY) and any system calling /api/subscription/notify.

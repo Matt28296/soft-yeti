@@ -1,4 +1,4 @@
-"""Prompt sanitization for coordinator task requests."""
+"""Prompt sanitization for coordinator task requests and volunteer output."""
 
 import re
 from collections.abc import Iterable
@@ -24,6 +24,12 @@ _PATH_PATTERNS = (
 )
 
 _MODEL_OVERRIDE_PATTERN = re.compile(r"(^|\n)\s*model\s*:\s*\S+.*?(?=\n|$)", re.IGNORECASE)
+
+# Strips C0/C1 control characters from volunteer output, preserving \n \r \t.
+# Null bytes break JSON encoding; other control chars are unexpected in LLM output.
+_CONTROL_CHARS = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
+
+MAX_OUTPUT_LENGTH = 32_000  # ~8k tokens at 4 chars/token
 
 
 def _setting_value(settings: Any, name: str, default: Any) -> Any:
@@ -61,3 +67,9 @@ async def sanitize_prompt(prompt: str, task_type: str, settings: Any | None = No
 
     max_length = int(_setting_value(settings, "MAX_PROMPT_LENGTH", MAX_PROMPT_LENGTH))
     return prompt.strip()[:max_length]
+
+
+def sanitize_output(output: str, max_length: int = MAX_OUTPUT_LENGTH) -> str:
+    """Strip control chars and truncate volunteer output before delivery to J-Claw."""
+    output = _CONTROL_CHARS.sub("", output)
+    return output[:max_length]

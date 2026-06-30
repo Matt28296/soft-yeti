@@ -6,7 +6,7 @@ Volunteers run a lightweight client, donate GPU capacity to an AI task pipeline 
 
 > **Phase 0 validated 2026-06-30** — Block #0 minted on 3060 Ti testbed. 6-second end-to-end: task submitted → Ollama inference → PoI hash accepted → block written → output returned.
 >
-> **Security hardened + Phase 0→1 bridge complete 2026-06-30** — Ed25519 wallet signatures on every submission, `miner_pubkey` + `model_name` recorded in every block, model cross-check in verifier. Block #1 minted via J-Claw YETI pool route (20s, 1.836 YETI, signed submission verified). 44/44 tests pass.
+> **Security hardened + Phase 0→1 bridge complete 2026-06-30** — Ed25519 wallet signatures on every submission, `miner_pubkey` + `model_name` recorded in every block, model cross-check in verifier. Block #1 minted via J-Claw YETI pool route (20s, 1.836 YETI, signed submission verified). Canary oracle expanded to 50 tasks. Volunteer ID hijacking fix. Rate limiting on `/api/register` + `/api/submit`. Wallet passphrase encryption. Dual-agent security review applied: reward inflation fix, Ed25519 bypass fix, chain-append lock, timeout memory cleanup, failure-count enforcement. **53/53 tests pass (33 coordinator + 20 chain).**
 
 ---
 
@@ -63,22 +63,23 @@ soft-yeti/
 │   ├── node.py                 # FastAPI sub-app: /chain/height, /chain/block/{n}, /chain/balance/{addr}
 │   └── test_chain.py           # 20 tests
 │
-├── coordinator/                # FastAPI coordinator server (24/24 tests)
+├── coordinator/                # FastAPI coordinator server (40/40 tests)
 │   ├── requirements.txt
-│   ├── main.py                 # All routes + lifespan
+│   ├── main.py                 # All routes + lifespan + rate limiting + chain lock
 │   ├── config.py               # pydantic-settings: keys, difficulty, timeouts
 │   ├── schemas.py              # TaskAssignment, InferenceSubmission, GenerateRequest, etc.
-│   ├── auth.py                 # bcrypt API key hashing + FastAPI dependency
-│   ├── registry.py             # Volunteer registry, TTL heartbeat, healthy_volunteers()
+│   ├── auth.py                 # bcrypt API key hashing + ownership-checked registration
+│   ├── registry.py             # Volunteer registry, TTL heartbeat, failure_count enforcement
 │   ├── task_queue.py           # asyncio queue + asyncio.Event waiter pattern
-│   ├── verifier.py             # PoI hash check + canary verification
+│   ├── verifier.py             # PoI hash check + canary verification + Ed25519 guard
 │   ├── minter.py               # mint_block() → chain.append_block()
 │   ├── sanitizer.py            # 6-step prompt sanitization
-│   ├── canary.py               # 10 canary tasks with known-exact outputs
+│   ├── canary.py               # 50 canary tasks with known-exact outputs (5 categories)
 │   ├── database.py             # aiosqlite schema init
 │   ├── subscription.py         # Placeholder — Phase 2: on-chain YETI → access
 │   └── tests/
 │       ├── test_api.py
+│       ├── test_auth.py        # 5 tests: ownership-checked registration
 │       ├── test_settings_sanitizer.py
 │       └── test_verifier_minter.py
 │
@@ -118,18 +119,33 @@ Invoke-RestMethod http://localhost:8900/api/health
 
 ### Volunteer client (any machine with Ollama + GPU)
 
+**Windows — one-command setup:**
+```powershell
+# Clone repo, then from soft-yeti/:
+.\setup_volunteer.ps1
+# Follow prompts: enter the coordinator URL, your Ollama model, and GPU VRAM
+# Script creates venv, installs deps, pulls model if missing, runs --setup wizard
+
+# Start mining:
+cd client
+.venv\Scripts\python yeti_client.py
+```
+
+**Manual (any OS):**
 ```bash
-# Install deps
-pip install requests ollama cryptography numpy
-
-# First run: register with coordinator
+cd client
+pip install -r requirements.txt
 python yeti_client.py --setup
-# Coordinator URL: http://<coordinator-ip>:8900
-# Model: qwen2.5-coder:7b-instruct (or any model you have)
-
-# Start mining
+# Coordinator URL: <provided by operator>
 python yeti_client.py
 ```
+
+> **Wallet passphrase:** set one during setup — it encrypts `~/.soft_yeti/wallet.json`
+> with AES-256-GCM. The client prompts for it on each startup. No passphrase = plaintext file.
+>
+> **Coordinator restart:** the coordinator's in-memory volunteer registry resets on
+> restart. Re-run `python yeti_client.py --setup` (same volunteer ID, wallet, and
+> pubkey — only the API key rotates). Your earned balance is safe on-chain.
 
 ### Enable in J-Claw
 
@@ -181,7 +197,7 @@ Example:  YETI1xpE6DPs8BV5pP656K65psAhgvJS
 
 Keys: Ed25519 (PKCS8 PEM via `cryptography` package — NOT PyNaCl, to avoid serialization incompatibilities).
 
-Wallets are stored encrypted at `~/.soft_yeti/wallet.json` (AES-256-GCM + PBKDF2).
+Wallets are stored at `~/.soft_yeti/wallet.json`. The setup wizard prompts for a passphrase: if one is set, the file is AES-256-GCM encrypted (PBKDF2-HMAC-SHA256, 100k iterations); if left blank, the file is plaintext. On startup, the client detects the encrypted flag and prompts for the passphrase before loading. Keep `wallet.json` and your passphrase safe — there is no recovery path if either is lost.
 
 ---
 
@@ -238,10 +254,10 @@ All set via `coordinator/.env`. Use absolute paths for file settings — pydanti
 cd soft-yeti
 python -m pytest chain/test_chain.py -v
 
-# Coordinator (24 tests — includes 2 Ed25519 signature tests added in security hardening)
-cd soft-yeti/coordinator
-pip install -r requirements.txt
-python -m pytest tests/ -v
+# Coordinator (40 tests)
+cd soft-yeti
+pip install -r coordinator/requirements.txt
+python -m pytest coordinator/tests/ -v
 ```
 
 ### Key invariants — do not break these
@@ -301,14 +317,18 @@ python yeti_client.py
 
 ## Phase roadmap
 
-| Phase | Status | Description |
+| Phase | Status | What shipped |
 |---|---|---|
-| **0 — Testbed** | ✅ Complete | Block #0 minted 2026-06-30 (3060 Ti, 6s). Security hardened: Ed25519 submission signatures, miner_pubkey + model_name in every block. 44/44 tests pass. |
-| **0→1 Bridge** | ✅ Complete | J-Claw YETI pool enabled; Block #1 minted via pool route (20s, 1.836 YETI, signed). Phase 1 ready. |
-| **1 — Internal** | ⏭ In progress | Cloudflare Tunnel, CLI distribution, 5 internal testers, yeti-testnet |
-| **2 — Hardening** | ⏭ | Argon2 PoW, Vulkan benchmark, asyncio.Lock wallet, subscription live |
-| **3 — Mainnet** | ⏭ HARD GATE | Legal review (FinCEN MSB, KYC/AML, Howey test) FIRST |
-| **4 — zkML** | ⏭ | "Verified Miner" premium tier, zero-knowledge model proofs |
+| **0 — Testbed** | ✅ Complete | Block #0 minted 2026-06-30 (3060 Ti, 6s end-to-end). Full PoI loop: task → Ollama inference → hash check → block write → output returned to J-Claw. |
+| **Security round 1** | ✅ Complete | Ed25519 submission signatures + miner_pubkey recorded in every block. Model cross-check in verifier. JCLAW_API_KEY guard on `/api/generate` + `/api/subscription/notify`. Nonce cap (500). |
+| **0→1 Bridge** | ✅ Complete | Block #1 via J-Claw YETI pool route (20s, 1.836 YETI, signed). Canary oracle 10→50 tasks (5 categories). Volunteer ID hijacking fix. Rate limiting (5/min register, 30/min submit). Wallet passphrase encryption. `setup_volunteer.ps1` bootstrap. |
+| **Security round 2** | ✅ Complete | Dual-agent (fork + Codex) security review. Reward inflation fix (token accumulation across nonce attempts). Ed25519 bypass fix (missing-pubkey volunteers now rejected). `_chain_lock` for concurrent block appends. Timeout memory leak. Failure-count enforcement. **53/53 tests pass (33 coordinator + 20 chain).** |
+| **1 — Internal testers** | ⏳ In progress | Canary temperature fix ✅, output sanitization ✅, `nonce_attempts ge=1` ✅, VRAM auto-detect + model ladder in setup script ✅, `validate_canary.py` ✅, exponential backoff in client ✅, 7 new tests ✅. **60/60 tests pass (40 coordinator + 20 chain).** Remaining: named Cloudflare tunnel (browser OAuth when home), empirical canary run, 5-tester invite. |
+| **1.5 — Zero-protocol quality wins** | ⏭ | Deliver all N nonce-attempt outputs to J-Claw (best picked by embedding similarity). Minimum quality gate in client (filter repetition/truncation before hashing). Base rate per inference run (per_attempt_reward regardless of block win). Zero blockchain changes. |
+| **2 — Hardening + Protocol foundation** | ⏭ | Argon2 memory-hard PoW (256MB/attempt). Vulkan/PyOpenCL real GPU benchmark. True model fingerprinting (per-model canary calibration). **Proof of Inference Depth (PoID)** — N self-refinement passes cryptographically chained; all passes delivered; reward ∝ depth; eliminates hash lottery. On-chain model registry (weights hash, reputation score, family). Difficulty auto-adjustment. Subscription economy live. `SoftYetiSetup.exe` one-click installer. |
+| **3 — Quality + Decentralization** | ⏭ HARD GATE | Legal review FIRST (FinCEN MSB, KYC/AML, Howey test). Then: BFT multi-validator consensus (5-of-9 threshold sigs, staked YETI, slashing). Reference model judge (tiny fixed-weight model, hash pinned in protocol, deterministic quality scores). Peer quality committee (commit-reveal, 5-miner panels, median wins). Bayesian miner reputation (Beta distribution). Model diversity enforcement (≥3 model families per block). Elastic emission + 30% fee burn (deflationary at scale). DHT task queue (decentralized routing). |
+| **4 — zkML + Full permissionless** | ⏭ | zkML proofs (model weights + inference cryptographically proven; retires canary oracle and GPU benchmark). Recursive task DAGs (cryptographically linked reasoning chains; immutable AI audit trails for regulated industries). Proof of Inference Diversity (PoDiv — M model families per task, reward ∝ ensemble contribution). Permissionless validators (stake + probation + on-chain concentration cap). |
+| **5 — Enterprise + Ecosystem** | ⏭ | On-chain computation lineage API (cryptographic provenance for finance/healthcare/legal). Open model ecosystem flywheel (on-chain quality leaderboard; miners flock to high-reputation models; developers earn from inference revenue). Full closed-loop tokenomics (burn > issuance at high utilization → deflationary). |
 
 ---
 
@@ -317,7 +337,8 @@ python yeti_client.py
 - **Legal review is a hard gate before Phase 3** — FinCEN MSB registration, KYC/AML compliance, Howey test analysis. No exceptions, no shortcuts.
 - Secrets in `.env` are never committed — use `.env.example` as the template
 - Coordinator private key (`coordinator.key`) must never be committed
-- `JCLAW_API_KEY` is empty in Phase 0 (open endpoint) — set before Phase 1 external testers
+- `JCLAW_API_KEY` must be set in `coordinator/.env` — protects `/api/generate` and `/api/subscription/notify`. Set before Phase 1 external testers (already done on the testbed machine).
+- `/api/register` is rate-limited to 5/minute per IP; `/api/submit` to 30/minute per IP
 
 ---
 

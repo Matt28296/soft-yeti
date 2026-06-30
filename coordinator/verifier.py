@@ -89,18 +89,20 @@ async def verify_submission(
 
     stored_pubkey, stored_model = vol_info
 
-    if stored_pubkey:
-        signing_msg = _submission_signing_message(submission)
-        try:
-            sig_valid = verify_signature(stored_pubkey, signing_msg, submission.miner_signature)
-        except Exception:
-            sig_valid = False
-        if not sig_valid:
-            return False, "invalid wallet signature"
+    if not stored_pubkey:
+        return False, "volunteer has no registered public key"
 
-        # Verify the claimed pubkey matches what's stored
-        if submission.miner_pubkey != stored_pubkey:
-            return False, "pubkey mismatch"
+    signing_msg = _submission_signing_message(submission)
+    try:
+        sig_valid = verify_signature(stored_pubkey, signing_msg, submission.miner_signature)
+    except Exception:
+        sig_valid = False
+    if not sig_valid:
+        return False, "invalid wallet signature"
+
+    # Verify the claimed pubkey matches what's stored
+    if submission.miner_pubkey != stored_pubkey:
+        return False, "pubkey mismatch"
 
     # ── 5. Model name cross-check ─────────────────────────────────────────────
     if stored_model and submission.model_name and submission.model_name != stored_model:

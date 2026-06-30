@@ -38,7 +38,7 @@ class InferenceSubmission(BaseModel):
     model_name: str
     output_text: str
     output_hash: str
-    nonce_attempts: int = Field(ge=0)
+    nonce_attempts: int = Field(ge=1)
     benchmark_signature: str
     prompt_tokens: int = Field(ge=0)
     completion_tokens: int = Field(ge=0)

@@ -22,6 +22,7 @@ async def api_client(tmp_path, monkeypatch):
     monkeypatch.setattr(main.settings, "DB_PATH", str(db_path))
     monkeypatch.setattr(main.settings, "CHAIN_STORE_PATH", str(chain_path))
     monkeypatch.setattr(main.settings, "DIFFICULTY_TARGET", "")
+    monkeypatch.setattr(main.settings, "JCLAW_API_KEY", "")
     monkeypatch.setattr(main, "registry", VolunteerRegistry())
     monkeypatch.setattr(main, "task_queue", TaskQueue())
 

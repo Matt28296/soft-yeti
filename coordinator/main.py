@@ -11,13 +11,16 @@ from typing import Any
 
 import uvicorn
 from fastapi import Depends, FastAPI, HTTPException, Request, status
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from slowapi.util import get_remote_address
 
 from coordinator.auth import get_current_volunteer, register_volunteer
 from coordinator.config import Settings, get_settings
 from coordinator.database import init_db
 from coordinator.minter import mint_block
 from coordinator.registry import VolunteerRegistry
-from coordinator.sanitizer import sanitize_prompt
+from coordinator.sanitizer import sanitize_output, sanitize_prompt
 from coordinator.schemas import (
     GenerateRequest,
     GenerateResponse,
@@ -36,6 +39,9 @@ settings = get_settings()
 registry = VolunteerRegistry()
 task_queue = TaskQueue()
 
+limiter = Limiter(key_func=get_remote_address)
+_chain_lock = asyncio.Lock()
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -46,6 +52,8 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Soft Yeti Coordinator", lifespan=lifespan)
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 
 def _read_chain_jsonl() -> list[dict[str, Any]]:
@@ -143,6 +151,7 @@ async def generate(
         await asyncio.wait_for(ev.wait(), timeout=settings.GENERATE_TIMEOUT_S)
     except asyncio.TimeoutError:
         await task_queue.complete_assignment(assignment.task_id)
+        await task_queue.take_result(assignment.task_id)  # clean up registered event
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="service unavailable: no volunteer completed the task in time",
@@ -171,10 +180,14 @@ async def get_next_task(
 
 
 @app.post("/api/register")
-async def register(registration: VolunteerRegistration) -> dict[str, str]:
+@limiter.limit("5/minute")
+async def register(request: Request, registration: VolunteerRegistration) -> dict[str, str]:
     """Register a volunteer and return its one-time API key."""
 
-    api_key = await register_volunteer(settings.DB_PATH, registration)
+    try:
+        api_key = await register_volunteer(settings.DB_PATH, registration)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc))
     await registry.register_seen(
         volunteer_id=registration.volunteer_id,
         model_name=registration.model_name,
@@ -203,7 +216,9 @@ async def assign_task(
 
 
 @app.post("/api/submit", response_model=SubmitResponse)
+@limiter.limit("30/minute")
 async def submit_inference(
+    request: Request,
     submission: InferenceSubmission,
     volunteer_id: str = Depends(get_current_volunteer),
 ) -> SubmitResponse:
@@ -227,17 +242,18 @@ async def submit_inference(
         await registry.mark_failure(volunteer_id)
         return SubmitResponse(accepted=False, reason=reason)
 
-    prev_hash, block_index = _last_chain_state()
-    block = await mint_block(
-        submission=submission,
-        task_assignment=assignment,
-        settings=settings,
-        prev_hash=prev_hash,
-        block_index=block_index,
-    )
-    _append_block(block)
+    async with _chain_lock:
+        prev_hash, block_index = _last_chain_state()
+        block = await mint_block(
+            submission=submission,
+            task_assignment=assignment,
+            settings=settings,
+            prev_hash=prev_hash,
+            block_index=block_index,
+        )
+        _append_block(block)
     await task_queue.complete_assignment(submission.task_id)
-    await task_queue.deliver_result(submission.task_id, submission.output_text)
+    await task_queue.deliver_result(submission.task_id, sanitize_output(submission.output_text))
 
     record = await registry.register_seen(
         volunteer_id=volunteer_id,

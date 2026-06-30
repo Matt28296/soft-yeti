@@ -57,7 +57,7 @@ class TaskQueue:
                     task_id=assignment_id,
                     task_type=task.task_type,
                     system=system,
-                    temperature=temperature,
+                    temperature=0.0,  # canary outputs are calibrated at temperature=0
                     prompt=canary.prompt,
                     max_tokens=task.max_tokens,
                     task_salt=task_salt,
