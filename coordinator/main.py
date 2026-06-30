@@ -264,7 +264,10 @@ async def heartbeat(volunteer_id: str = Depends(get_current_volunteer)) -> dict[
 
 
 @app.post("/api/subscription/notify")
-async def subscription_notify(transfer: TransferNotification) -> dict[str, bool]:
+async def subscription_notify(
+    transfer: TransferNotification,
+    _: None = Depends(_require_jclaw_auth),
+) -> dict[str, bool]:
     """Record a YETI transfer and extend the recipient subscription."""
 
     await record_transfer(settings.DB_PATH, transfer)
