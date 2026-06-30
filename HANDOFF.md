@@ -243,6 +243,29 @@ YETI_TASK_TIMEOUT_S: int = 300
 
 ---
 
+## Security hardening applied (post-Phase 0, 2026-06-30)
+
+Committed to `Matt28296/soft-yeti` (cb2889ef):
+
+| Fix | Files | Status |
+|---|---|---|
+| Wallet pubkey in registration | `schemas.py`, `database.py`, `auth.py` | ✅ Done |
+| Ed25519 submission signature | `schemas.py`, `verifier.py`, `client/yeti_wallet.py`, `client/yeti_node.py` | ✅ Done |
+| Model name in submissions + blocks | `schemas.py`, `verifier.py`, `minter.py`, `chain/block.py`, `client/yeti_node.py` | ✅ Done |
+| Canary comparison `.strip()` | `canary.py` | ✅ Done |
+| DB migration for existing installs | `database.py` | ✅ Done |
+| 2 new tests (sig accept/reject) | `tests/test_verifier_minter.py` | ✅ Done |
+
+**Test count: 44/44 pass** (was 42/42; added 2 signature verification tests + fixed 1 stale path assertion).
+
+**3060 Ti volunteer must re-run `--setup`** to register with the new `miner_pubkey` field before mining again.
+
+**Remaining (Phase 2):**
+- `benchmark_signature` is only checked non-empty — real cryptographic GPU timing verification needs Phase 2 Vulkan kernel
+- Model verification is cross-check only (name match) — zkML proof for Phase 4
+
+---
+
 ## Known gaps / Phase 1+ work
 
 - `client/benchmark.py` uses numpy matrix multiply (Phase 0 stub) — Phase 2 replaces with PyOpenCL/Vulkan GPU kernel
@@ -260,6 +283,6 @@ YETI_TASK_TIMEOUT_S: int = 300
 - Coordinator: `soft-yeti/coordinator/` — start with `start_coordinator.ps1` from `soft-yeti/`
 - Client: `soft-yeti/client/` — `python yeti_client.py [--setup]`
 - Chain: `soft-yeti/chain/` — shared library, imported by coordinator
-- Tests: `cd soft-yeti/coordinator && pytest tests/` (22 tests)
+- Tests: `cd soft-yeti/coordinator && pytest tests/` (44 tests total: 20 chain + 24 coordinator)
 - Chain tests: `cd soft-yeti && python -m pytest chain/tests/` (20 tests)
 - Plan: `~/.claude/plans/i-want-to-add-soft-yeti.md`
