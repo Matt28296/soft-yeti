@@ -94,8 +94,8 @@ def _nonce_search(
     submits the result to the coordinator. Returns True on accepted submission.
     """
     task_id = assignment["task_id"]
-    task_salt = assignment["task_salt"]
-    difficulty_target = assignment.get("difficulty_target", "")
+    task_salt = assignment.get("task_salt", "")
+    difficulty_target = assignment.get("difficulty_target", "") or ""
     system = assignment.get("system", "")
     prompt = assignment.get("prompt", "")
     temperature = float(assignment.get("temperature", 0.3))
