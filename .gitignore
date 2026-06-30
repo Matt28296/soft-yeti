@@ -1,0 +1,20 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Coordinator runtime data (never commit)
+coordinator/.env
+coordinator/coordinator.key
+coordinator/coordinator.pub
+coordinator/coordinator.db
+coordinator/yeti-chain.jsonl
+
+# Cloudflare tunnel
+cloudflared.exe
+cloudflared.log
+
+# Wallet files
+.soft_yeti/
+*.soft_yeti
