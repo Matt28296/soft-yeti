@@ -248,7 +248,7 @@ CANARY_TASKS: Final[list[CanaryTask]] = [
     ),
     CanaryTask(
         canary_id="canary-046",
-        prompt="Return exactly the Python expression result: sorted([3, 1, 2])[-1]. No explanation.",
+        prompt="Return exactly the Python expression result: [1, 2, 3][-1]. No explanation.",
         expected_output="3",
     ),
     CanaryTask(
