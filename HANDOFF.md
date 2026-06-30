@@ -286,3 +286,36 @@ Committed to `Matt28296/soft-yeti` (cb2889ef):
 - Tests: `cd soft-yeti/coordinator && pytest tests/` (44 tests total: 20 chain + 24 coordinator)
 - Chain tests: `cd soft-yeti && python -m pytest chain/tests/` (20 tests)
 - Plan: `~/.claude/plans/i-want-to-add-soft-yeti.md`
+
+---
+
+## Phase 1 — Cloudflare Tunnel (LIVE 2026-06-30)
+
+**Quick tunnel URL (ephemeral — changes on restart):**
+`
+https://gourmet-blackberry-two-relaxation.trycloudflare.com
+`
+Verified: GET /api/health returns {"healthy_volunteers":1} over public internet.
+
+**How it was started (from soft-yeti/ dir):**
+`powershell
+.\cloudflared.exe tunnel --url http://localhost:8900 --logfile cloudflared.log --loglevel info
+`
+
+**Important: quick tunnel URL changes every time cloudflared restarts.**
+For a stable URL (Phase 1 proper): create a named Cloudflare tunnel with a Cloudflare account.
+This requires a Cloudflare account + domain, or a free workers.dev subdomain.
+
+**External tester setup (use tunnel URL instead of Tailscale IP):**
+`ash
+git clone https://github.com/Matt28296/soft-yeti
+cd soft-yeti/client
+pip install requests ollama cryptography numpy
+python yeti_client.py --setup
+# Coordinator URL: https://gourmet-blackberry-two-relaxation.trycloudflare.com
+# Model: <your local Ollama model>
+# VRAM: <your VRAM in GB>
+python yeti_client.py
+`
+
+**cloudflared binary:** soft-yeti/cloudflared.exe (Windows x64, v2026.6.1 — gitignored, not committed)
