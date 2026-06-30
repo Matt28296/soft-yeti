@@ -17,7 +17,7 @@ Phase 0 complete + security hardened + Phase 0→1 bridge complete (2026-06-30).
 
 **60/60 tests pass total (40 coordinator + 20 chain).**
 
-**Next gate:** named Cloudflare tunnel (needs `cloudflared tunnel login` browser OAuth) → send URL to 5 testers.
+**Next gate:** Cloudflare tunnel URL (quick ephemeral tunnel works for 5-tester phase; named tunnel requires a domain on Cloudflare account) → send URL to 5 internal testers.
 
 ---
 
@@ -232,11 +232,14 @@ YETI_TASK_TIMEOUT_S: int = 300
   - Output sanitization — `sanitize_output()` in `sanitizer.py` strips control chars + truncates to 32k chars; wired into `main.py` before `deliver_result`
   - `nonce_attempts` minimum changed from `ge=0` to `ge=1` in `schemas.py`
   - Model auto-detection in `setup_volunteer.ps1` — detects VRAM via nvidia-smi → rocm-smi → WMI, selects model from ladder: <4 GB=qwen2.5:1.5b, 4-6=phi4-mini:3.8b, 6-10=qwen2.5-coder:7b-instruct (default), 10-20=deepseek-coder-v2:16b, 20+=qwen2.5-coder:32b. Passes detected values to setup wizard via env vars.
-  - `validate_canary.py` — empirical validation script (run against live Ollama when home)
-  - **33/33 tests still pass.**
-- ⏭ **Phase 1 — remaining (home-blocked)**:
-  - Named Cloudflare tunnel — needs `cloudflared tunnel login` browser OAuth
-  - Empirical canary validation — run `python validate_canary.py` against live Ollama
+  - `validate_canary.py` — empirical validation script
+  - Exponential backoff in `yeti_node.py` (`_backoff_delay` 5s→120s cap)
+  - **60/60 tests pass (40 coordinator + 20 chain).**
+- ✅ **Empirical canary validation (2026-06-30)**: ran `validate_canary.py` against live `qwen2.5-coder:7b-instruct`. Fixed 7 unreliable prompts (model gave wrong answers or code blocks instead of results) + added `normalize_canary_output()` to strip Python quote-wrapping and markdown code blocks before comparison. **50/50 PASS.**
+- ✅ **Git push (2026-06-30)**: commits `860b39c` + `5d88680` pushed to `Matt28296/soft-yeti` main. Git installed on 9070 XT via winget; push done from 9070 XT using `gh` auth.
+- ⏭ **Phase 1 — remaining**:
+  - Cloudflare tunnel URL — quick tunnel (`.\cloudflared.exe tunnel --url http://localhost:8900`) works for 5-tester phase; named tunnel requires a Cloudflare zone (domain)
+  - 3060 Ti: `git pull` in its soft-yeti copy
   - Send URL to 5 internal testers
 - ⏭ **Phase 1.5 — Zero protocol change quality wins** (do immediately after Phase 1 closes):
   - Deliver all N nonce-attempt outputs to J-Claw — `_result_store` accumulates a list; `_call_yeti()` picks best by embedding similarity. Zero blockchain changes.
@@ -337,7 +340,7 @@ Committed to `Matt28296/soft-yeti` (cb2889ef):
 - ✅ `asyncio.Lock` per wallet — already in `subscription.py` (`_wallet_locks` + `_wallet_locks_guard`)
 - Difficulty auto-adjustment not yet implemented (static `DIFFICULTY_TARGET` in config)
 - `client/build_installer.py` (PyInstaller → SoftYetiSetup.exe) not built
-- Empirical canary validation not yet run — `validate_canary.py` is written; run `python validate_canary.py` from `soft-yeti/` when Ollama is live to confirm all 50 expected outputs match
+- ✅ Empirical canary validation complete — **50/50 PASS** against `qwen2.5-coder:7b-instruct` @ temperature=0. `normalize_canary_output()` added to `canary.py` (strips outer Python quotes + extracts Output: sections from code blocks). 7 prompts replaced with simpler equivalents where model gave wrong answers.
 - **Canary oracle detects non-inference cheaters, NOT model substitution.** All 50 prompts have objectively correct answers (math, Python expressions) that any competent LLM returns identically. A volunteer swapping `llama3:8b` for `qwen2.5-coder:7b-instruct` passes canary just fine. The model cross-check in `verifier.py` is a name-match only, not cryptographic. True model fingerprinting requires per-model expected-output calibration (Phase 2) or zkML proofs (Phase 4).
 
 ---
