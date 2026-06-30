@@ -5,6 +5,8 @@
 Volunteers run a lightweight client, donate GPU capacity to an AI task pipeline (J-Claw), and earn YETI tokens. YETI is also the subscription currency for the AI product — a closed-loop economy where miners earn what subscribers spend.
 
 > **Phase 0 validated 2026-06-30** — Block #0 minted on 3060 Ti testbed. 6-second end-to-end: task submitted → Ollama inference → PoI hash accepted → block written → output returned.
+>
+> **Security hardened + Phase 0→1 bridge complete 2026-06-30** — Ed25519 wallet signatures on every submission, `miner_pubkey` + `model_name` recorded in every block, model cross-check in verifier. Block #1 minted via J-Claw YETI pool route (20s, 1.836 YETI, signed submission verified). 44/44 tests pass.
 
 ---
 
@@ -61,7 +63,7 @@ soft-yeti/
 │   ├── node.py                 # FastAPI sub-app: /chain/height, /chain/block/{n}, /chain/balance/{addr}
 │   └── test_chain.py           # 20 tests
 │
-├── coordinator/                # FastAPI coordinator server (22/22 tests)
+├── coordinator/                # FastAPI coordinator server (24/24 tests)
 │   ├── requirements.txt
 │   ├── main.py                 # All routes + lifespan
 │   ├── config.py               # pydantic-settings: keys, difficulty, timeouts
@@ -198,6 +200,8 @@ Wallets are stored encrypted at `~/.soft_yeti/wallet.json` (AES-256-GCM + PBKDF2
   "nonce_attempts": 1,
   "prompt_tokens": 42,
   "completion_tokens": 28,
+  "model_name": "qwen2.5-coder:7b-instruct",
+  "miner_pubkey": "67743d1315e19619...",
   "miner_reward": 0.0252,
   "treasury_reward": 0.0028,
   "timestamp": 1751248800.0,
@@ -234,7 +238,7 @@ All set via `coordinator/.env`. Use absolute paths for file settings — pydanti
 cd soft-yeti
 python -m pytest chain/test_chain.py -v
 
-# Coordinator (22 tests)  
+# Coordinator (24 tests — includes 2 Ed25519 signature tests added in security hardening)
 cd soft-yeti/coordinator
 pip install -r requirements.txt
 python -m pytest tests/ -v
@@ -268,11 +272,12 @@ python -m pytest tests/ -v
 
 | Phase | Status | Description |
 |---|---|---|
-| **0 — Testbed** | ✅ Built + validated | 3060 Ti mined Block #0 in 6s; all 42 tests pass |
-| **1 — Internal** | ⏭ Next | Cloudflare Tunnel, CLI distribution, 5 internal testers |
-| **2 — Hardening** | ⏭ | Argon2 PoW, Vulkan benchmark, subscription live |
+| **0 — Testbed** | ✅ Complete | Block #0 minted 2026-06-30 (3060 Ti, 6s). Security hardened: Ed25519 submission signatures, miner_pubkey + model_name in every block. 44/44 tests pass. |
+| **0→1 Bridge** | ✅ Complete | J-Claw YETI pool enabled; Block #1 minted via pool route (20s, 1.836 YETI, signed). Phase 1 ready. |
+| **1 — Internal** | ⏭ In progress | Cloudflare Tunnel, CLI distribution, 5 internal testers, yeti-testnet |
+| **2 — Hardening** | ⏭ | Argon2 PoW, Vulkan benchmark, asyncio.Lock wallet, subscription live |
 | **3 — Mainnet** | ⏭ HARD GATE | Legal review (FinCEN MSB, KYC/AML, Howey test) FIRST |
-| **4 — zkML** | ⏭ | "Verified Miner" premium tier, zero-knowledge proofs |
+| **4 — zkML** | ⏭ | "Verified Miner" premium tier, zero-knowledge model proofs |
 
 ---
 
@@ -285,15 +290,27 @@ python -m pytest tests/ -v
 
 ---
 
-## Genesis block
+## Chain milestone blocks
 
 ```
-Block #0
-  index:    0
-  hash:     5d9b558449eb1c68...
-  miner:    YETI1xpE6DPs8BV5pP656K65psAhgvJS
-  reward:   0.0252 YETI
-  task:     phase0-test-010
-  minted:   2026-06-30 ~03:44 UTC
-  time:     6 seconds end-to-end
+Block #0 — Genesis
+  index:       0
+  hash:        5d9b558449eb1c68...
+  miner:       YETI1xpE6DPs8BV5pP656K65psAhgvJS
+  reward:      0.0252 YETI
+  task:        phase0-test-010
+  minted:      2026-06-30 ~03:44 UTC
+  time:        6 seconds end-to-end
+
+Block #1 — First signed submission (security hardening validated)
+  index:       1
+  hash:        (see yeti-chain.jsonl)
+  miner:       YETI1xpE6DPs8BV5pP656K65psAhgvJS
+  model_name:  qwen2.5-coder:7b-instruct
+  miner_pubkey: 67743d1315e19619...
+  reward:      1.836 YETI
+  task:        phase1-bridge-001
+  nonce_tries: 5
+  minted:      2026-06-30
+  time:        20 seconds (J-Claw → YETI pool → 3060 Ti → block)
 ```
