@@ -268,6 +268,37 @@ python -m pytest tests/ -v
 
 ---
 
+## Phase 1 — Cloudflare Tunnel
+
+The coordinator is reachable publicly via Cloudflare Tunnel. External volunteers use the tunnel URL instead of a Tailscale IP.
+
+**Quick tunnel (ephemeral — URL changes on restart):**
+```powershell
+# From soft-yeti/ directory — cloudflared.exe must be present (not committed, download separately)
+.\cloudflared.exe tunnel --url http://localhost:8900 --logfile cloudflared.log --loglevel info
+```
+
+The URL appears in `cloudflared.log` after ~5 seconds. Example:
+```
+https://gourmet-blackberry-two-relaxation.trycloudflare.com
+```
+
+**External tester quick-start** (replace URL with current tunnel):
+```bash
+git clone https://github.com/Matt28296/soft-yeti
+cd soft-yeti/client
+pip install requests ollama cryptography numpy
+python yeti_client.py --setup
+# Coordinator URL: https://<current-tunnel>.trycloudflare.com
+# Model: <your Ollama model, e.g. qwen2.5-coder:7b-instruct>
+# VRAM: <your GPU VRAM in GB>
+python yeti_client.py
+```
+
+> For a stable persistent URL (Phase 1 production): create a named Cloudflare Tunnel with a Cloudflare account. The quick tunnel is sufficient for 5-tester internal phase.
+
+---
+
 ## Phase roadmap
 
 | Phase | Status | Description |
