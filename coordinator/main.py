@@ -48,23 +48,26 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="Soft Yeti Coordinator", lifespan=lifespan)
 
 
-def _last_chain_state() -> tuple[str, int]:
-    """Return the previous block hash and next block index from the JSONL chain store."""
-
+def _read_chain_jsonl() -> list[dict[str, Any]]:
+    """Read all blocks from the JSONL chain store. Returns [] if file absent."""
     chain_path = Path(settings.CHAIN_STORE_PATH)
     if not chain_path.exists():
-        return "0" * 64, 0
-
-    last_block: dict[str, Any] | None = None
-    with chain_path.open("r", encoding="utf-8") as chain_file:
-        for line in chain_file:
+        return []
+    blocks = []
+    with chain_path.open("r", encoding="utf-8") as f:
+        for line in f:
             stripped = line.strip()
             if stripped:
-                last_block = json.loads(stripped)
+                blocks.append(json.loads(stripped))
+    return blocks
 
-    if last_block is None:
+
+def _last_chain_state() -> tuple[str, int]:
+    """Return the previous block hash and next block index from the JSONL chain store."""
+    blocks = _read_chain_jsonl()
+    if not blocks:
         return "0" * 64, 0
-
+    last_block = blocks[-1]
     prev_hash = str(last_block.get("block_hash", "0" * 64))
     next_index = int(last_block.get("index", -1)) + 1
     return prev_hash, next_index
@@ -273,6 +276,46 @@ async def subscription_check(wallet: str) -> dict[str, bool]:
     """Return whether a wallet currently has an active subscription."""
 
     return {"subscribed": await is_subscribed(settings.DB_PATH, wallet)}
+
+
+# ---------------------------------------------------------------------------
+# Chain read routes — read directly from the JSONL store (no ChainStorage/
+# ChainManager needed; the SQLite-indexed chain node is a Phase 2 upgrade).
+# ---------------------------------------------------------------------------
+
+@app.get("/chain/height")
+async def chain_height() -> dict[str, int]:
+    return {"height": len(_read_chain_jsonl())}
+
+
+@app.get("/chain/latest")
+async def chain_latest() -> dict[str, Any]:
+    blocks = _read_chain_jsonl()
+    if not blocks:
+        raise HTTPException(status_code=404, detail="Chain is empty")
+    return blocks[-1]
+
+
+@app.get("/chain/block/{index}")
+async def chain_block(index: int) -> dict[str, Any]:
+    blocks = _read_chain_jsonl()
+    if index < 0 or index >= len(blocks):
+        raise HTTPException(status_code=404, detail=f"Block {index} not found")
+    return blocks[index]
+
+
+@app.get("/chain/balance/{addr}")
+async def chain_balance(addr: str) -> dict[str, Any]:
+    blocks = _read_chain_jsonl()
+    balance = sum(b.get("miner_reward", 0.0) for b in blocks if b.get("miner_wallet") == addr)
+    return {"wallet": addr, "balance_yeti": round(balance, 8)}
+
+
+@app.get("/chain/history/{addr}")
+async def chain_history(addr: str) -> dict[str, Any]:
+    blocks = _read_chain_jsonl()
+    mined = [b for b in blocks if b.get("miner_wallet") == addr]
+    return {"wallet": addr, "blocks": mined}
 
 
 if __name__ == "__main__":
