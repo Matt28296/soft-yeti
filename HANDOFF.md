@@ -64,9 +64,9 @@ YETI_ALLOWED_TASK_TYPES=documentation,qa
 - [x] Client receives task from `GET /api/task/next`
 - [x] Client runs inference, finds valid PoI hash
 - [x] `POST /api/submit` succeeds → **Block #0 minted** (hash: `5d9b558449eb1c68...`, reward: 0.0252 YETI to `YETI1xpE6DPs8BV5pP656K65psAhgvJS`, task: `phase0-test-010`, time: 6 seconds)
-- [ ] `GET /chain/balance/{wallet}` returns non-zero YETI  ← not yet tested (endpoint exists)
+- [x] `GET /chain/balance/{wallet}` returns 1.8612 YETI (0.0252 Block#0 + 1.836 Block#1) ✅ — chain routes added to coordinator/main.py 2026-06-30
 - [x] J-Claw routed `documentation` task (phase1-bridge-001) through YETI pool — Block #1 minted 2026-06-30
-- [ ] `mission_control.json` shows `node_id: "yeti_pool"` on completed task  ← next step
+- [ ] `mission_control.json` shows `node_id: yeti_pool` on completed task  ← run a full J-Claw build to verify
 - [x] `/api/generate` endpoint returns output to J-Claw (tested directly; returned in 6s)
 
 ---
