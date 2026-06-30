@@ -65,7 +65,7 @@ YETI_ALLOWED_TASK_TYPES=documentation,qa
 - [x] Client runs inference, finds valid PoI hash
 - [x] `POST /api/submit` succeeds → **Block #0 minted** (hash: `5d9b558449eb1c68...`, reward: 0.0252 YETI to `YETI1xpE6DPs8BV5pP656K65psAhgvJS`, task: `phase0-test-010`, time: 6 seconds)
 - [ ] `GET /chain/balance/{wallet}` returns non-zero YETI  ← not yet tested (endpoint exists)
-- [ ] J-Claw routes a `documentation` task through YETI pool  ← next step (enable `YETI_POOL_ENABLED=true` in harness/.env)
+- [x] J-Claw routed `documentation` task (phase1-bridge-001) through YETI pool — Block #1 minted 2026-06-30
 - [ ] `mission_control.json` shows `node_id: "yeti_pool"` on completed task  ← next step
 - [x] `/api/generate` endpoint returns output to J-Claw (tested directly; returned in 6s)
 
@@ -221,7 +221,7 @@ YETI_TASK_TIMEOUT_S: int = 300
 
 - ✅ **Phase 0 build**: 3060 Ti closed testbed — chain/ + coordinator/ + client/ all built 2026-06-30; J-Claw integration complete
 - ✅ **Phase 0 validation**: Block #0 minted 2026-06-30; 3060 Ti mined in 6s; `/api/generate` returned output; PoI loop end-to-end confirmed
-- ⏭ **Phase 0 → Phase 1 bridge**: enable `YETI_POOL_ENABLED=true` in J-Claw `harness/.env`, run a real J-Claw build, verify `mission_control.json` shows `node_id: yeti_pool`
+- ✅ **Phase 0 → Phase 1 bridge COMPLETE (2026-06-30)**: YETI pool enabled in J-Claw harness/.env, phase1-bridge-001 (documentation task) completed in 20s via 3060 Ti pool — **Block #1 minted** (model_name=qwen2.5-coder:7b-instruct, miner_pubkey=67743d13..., reward=1.836 YETI, nonce_tries=5). Ed25519 signed submission verified end-to-end.
 - ⏭ **Phase 1**: Cloudflare Tunnel + CLI client distribution (5 internal testers, yeti-testnet)
 - ⏭ **Phase 2**: Argon2 PoW (Theory 2) + Vulkan benchmark (Theory 7) + asyncio.Lock wallet + pystray installer + subscription live
 - ⏭ **Phase 3**: public mainnet — HARD GATE: legal review (FinCEN MSB, KYC/AML, Howey test) FIRST
