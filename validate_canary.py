@@ -24,7 +24,7 @@ import requests
 # Allow importing from the coordinator package
 sys.path.insert(0, str(Path(__file__).parent))
 
-from coordinator.canary import CANARY_TASKS
+from coordinator.canary import CANARY_TASKS, normalize_canary_output
 
 
 def _run_inference(host: str, model: str, prompt: str) -> str:
@@ -61,7 +61,7 @@ def main() -> None:
     for task in CANARY_TASKS:
         try:
             raw_output = _run_inference(args.host, args.model, task.prompt)
-            actual = raw_output.strip()
+            actual = normalize_canary_output(raw_output)
             expected = task.expected_output.strip()
             ok = actual == expected
             if ok:

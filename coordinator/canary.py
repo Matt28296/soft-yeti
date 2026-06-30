@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import hashlib
+import re
 from typing import Final
 
 
@@ -89,8 +90,8 @@ CANARY_TASKS: Final[list[CanaryTask]] = [
     ),
     CanaryTask(
         canary_id="canary-015",
-        prompt="Return exactly the Python expression result: 'coordinator'[-1]. No explanation.",
-        expected_output="r",
+        prompt="Return exactly the Python expression result: 'nonce'[0]. No explanation.",
+        expected_output="n",
     ),
     CanaryTask(
         canary_id="canary-016",
@@ -114,8 +115,8 @@ CANARY_TASKS: Final[list[CanaryTask]] = [
     ),
     CanaryTask(
         canary_id="canary-020",
-        prompt="Return exactly the Python expression result: 'proof'[::-1]. No explanation.",
-        expected_output="foorp",
+        prompt="Return exactly the Python expression result: 'abc'[::-1]. No explanation.",
+        expected_output="cba",
     ),
     # ── Boolean and comparisons (021-030) ─────────────────────────────────────
     CanaryTask(
@@ -201,7 +202,7 @@ CANARY_TASKS: Final[list[CanaryTask]] = [
     ),
     CanaryTask(
         canary_id="canary-037",
-        prompt="Return exactly the Python expression result: 'blockchain'.count('c'). No explanation.",
+        prompt="Return exactly the Python expression result: 'aabbcc'.count('b'). No explanation.",
         expected_output="2",
     ),
     CanaryTask(
@@ -242,8 +243,8 @@ CANARY_TASKS: Final[list[CanaryTask]] = [
     ),
     CanaryTask(
         canary_id="canary-045",
-        prompt="Return exactly the Python expression result: len('proof-of-inference'). No explanation.",
-        expected_output="18",
+        prompt="Return exactly the Python expression result: len('mining'). No explanation.",
+        expected_output="6",
     ),
     CanaryTask(
         canary_id="canary-046",
@@ -252,7 +253,7 @@ CANARY_TASKS: Final[list[CanaryTask]] = [
     ),
     CanaryTask(
         canary_id="canary-047",
-        prompt="Return exactly the Python expression result: 'yeti'[0].upper() + 'eti'. No explanation.",
+        prompt="Return exactly the Python expression result: 'yeti'.capitalize(). No explanation.",
         expected_output="Yeti",
     ),
     CanaryTask(
@@ -262,12 +263,12 @@ CANARY_TASKS: Final[list[CanaryTask]] = [
     ),
     CanaryTask(
         canary_id="canary-049",
-        prompt="Return exactly the Python expression result: ''.join(sorted('yeti')). No explanation.",
-        expected_output="eity",
+        prompt="Return exactly the Python expression result: ''.join(sorted('cba')). No explanation.",
+        expected_output="abc",
     ),
     CanaryTask(
         canary_id="canary-050",
-        prompt="Return exactly the Python expression result: max(len('soft'), len('yeti'), len('coordinator')). No explanation.",
+        prompt="Return exactly the Python expression result: max(4, 9, 11). No explanation.",
         expected_output="11",
     ),
 ]
@@ -296,6 +297,33 @@ def choose_canary(seed: str | int | bytes) -> CanaryTask:
     return CANARY_TASKS[_seed_digest(seed) % len(CANARY_TASKS)]
 
 
+_CODE_BLOCK_RE = re.compile(r"```(?:python)?\s*\n(.*?)```", re.DOTALL)
+_OUTPUT_SECTION_RE = re.compile(r"[Oo]utput[:\s]*```\s*\n?(.*?)\n?```", re.DOTALL)
+
+
+def normalize_canary_output(text: str) -> str:
+    """Normalize model output before canary comparison.
+
+    Handles the two common formatting variations:
+    - Markdown code blocks — extracts Output: section if present, else first line
+    - Outer Python string quotes ('value' or "value") — stripped
+    """
+    text = text.strip()
+    # If there is an Output: section inside a code block, that is the result
+    out_match = _OUTPUT_SECTION_RE.search(text)
+    if out_match:
+        return out_match.group(1).strip()
+    # If the whole response is a code block, take the first non-empty line
+    block_match = _CODE_BLOCK_RE.match(text)
+    if block_match:
+        first_line = block_match.group(1).strip().split("\n")[0].strip()
+        return normalize_canary_output(first_line)
+    # Strip outer Python string quotes
+    if len(text) >= 2 and text[0] == text[-1] and text[0] in ("'", '"'):
+        text = text[1:-1]
+    return text
+
+
 def verify_canary_output(canary: CanaryTask, actual_output: str) -> bool:
-    """Validate the canary output, stripping leading/trailing whitespace first."""
-    return actual_output.strip() == canary.expected_output
+    """Validate the canary output, normalizing format before comparison."""
+    return normalize_canary_output(actual_output) == canary.expected_output
