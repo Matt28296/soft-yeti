@@ -235,12 +235,13 @@ YETI_TASK_TIMEOUT_S: int = 300
   - `validate_canary.py` — empirical validation script
   - Exponential backoff in `yeti_node.py` (`_backoff_delay` 5s→120s cap)
   - **60/60 tests pass (40 coordinator + 20 chain).**
-- ✅ **Empirical canary validation (2026-06-30)**: ran `validate_canary.py` against live `qwen2.5-coder:7b-instruct`. Fixed 7 unreliable prompts (model gave wrong answers or code blocks instead of results) + added `normalize_canary_output()` to strip Python quote-wrapping and markdown code blocks before comparison. **50/50 PASS.**
-- ✅ **Git push (2026-06-30)**: commits `860b39c` + `5d88680` pushed to `Matt28296/soft-yeti` main. Git installed on 9070 XT via winget; push done from 9070 XT using `gh` auth.
-- ⏭ **Phase 1 — remaining**:
-  - Cloudflare tunnel URL — quick tunnel (`.\cloudflared.exe tunnel --url http://localhost:8900`) works for 5-tester phase; named tunnel requires a Cloudflare zone (domain)
-  - 3060 Ti: `git pull` in its soft-yeti copy
-  - Send URL to 5 internal testers
+- ✅ **Empirical canary validation (2026-06-30)**: ran `validate_canary.py` against live `qwen2.5-coder:7b-instruct`. Fixed 7 unreliable prompts + added `normalize_canary_output()` (strips Python quote-wrapping, markdown code blocks, trailing punctuation). **50/50 PASS.**
+- ✅ **Git push (2026-06-30)**: commits `860b39c` + `5d88680` pushed to `Matt28296/soft-yeti` main. Git installed on 9070 XT via winget.
+- ✅ **PWA dashboard (2026-07-01)**: local FastAPI server at `localhost:8901`. Card UI with mining toggle, live YETI balance (auto-refresh 10s), GPU/model/wallet display, PWA install prompt. Commit `75a0116`. Bug fixes (wallet address path + balance key) in `bdf4557`.
+- ✅ **GPU name persisted in config (2026-07-01)**: `gpu_name` field added to `YetiConfig`; `setup_volunteer.ps1` passes `YETI_DETECTED_GPU` env var; dashboard uses persisted value with runtime fallback. Commit `64fb1c1`.
+- ✅ **Named Cloudflare tunnel live (2026-07-01)**: `soft-yeti.com`, `www.soft-yeti.com`, `api.soft-yeti.com` all route to coordinator port 8900. Stable URL — does not change on restart.
+- ✅ **Canary extended to laptop models (2026-07-01)**: ran `validate_canary.py` against `qwen2.5:1.5b-instruct` (model ladder <4GB / CPU inference). 30/50 initial failures — 1.5B fails boolean comparisons and multi-term arithmetic. Fixed 23 prompts with simple single-operation arithmetic. Added trailing punctuation strip to `normalize_canary_output()`. Raised `validate_canary.py` timeout 60s→300s (model cold-load). **50/50 on both 1.5B and 7B.** Commit `ff02d5e`. NOTE: Ollama KV-cache corruption bug discovered — `num_predict:1` warmup call poisons cache; all subsequent similar-prompt calls return EOS (empty response). Fix: never use `num_predict:1` for warmup; use `ollama stop <model>` to clear before re-testing.
+- ⏭ **Phase 1 — final gate**: send soft-yeti.com URL to 5 external testers → confirm connectivity + first block minted per tester → Phase 1 complete.
 - ⏭ **Phase 1.5 — Zero protocol change quality wins** (do immediately after Phase 1 closes):
   - Deliver all N nonce-attempt outputs to J-Claw — `_result_store` accumulates a list; `_call_yeti()` picks best by embedding similarity. Zero blockchain changes.
   - Minimum quality gate in client — `_passes_quality_gate()` in `yeti_node.py` filters too-short / repetition-loop outputs before hashing; failed outputs skip submission and don't count as attempts.

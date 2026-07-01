@@ -284,34 +284,37 @@ python -m pytest coordinator/tests/ -v
 
 ---
 
-## Phase 1 — Cloudflare Tunnel
+## Phase 1 — Cloudflare Tunnel + Dashboard
 
-The coordinator is reachable publicly via Cloudflare Tunnel. External volunteers use the tunnel URL instead of a Tailscale IP.
+The coordinator is live at **`https://api.soft-yeti.com`** via a named Cloudflare Tunnel (stable — does not change on restart). Landing page at **`https://soft-yeti.com`**.
 
-**Quick tunnel (ephemeral — URL changes on restart):**
+**External tester quick-start:**
 ```powershell
-# From soft-yeti/ directory — cloudflared.exe must be present (not committed, download separately)
-.\cloudflared.exe tunnel --url http://localhost:8900 --logfile cloudflared.log --loglevel info
-```
-
-The URL appears in `cloudflared.log` after ~5 seconds. Example:
-```
-https://gourmet-blackberry-two-relaxation.trycloudflare.com
-```
-
-**External tester quick-start** (replace URL with current tunnel):
-```bash
 git clone https://github.com/Matt28296/soft-yeti
+cd soft-yeti
+.\setup_volunteer.ps1
+# Coordinator URL when prompted: https://api.soft-yeti.com
+```
+
+Or manual (any OS):
+```bash
 cd soft-yeti/client
-pip install requests ollama cryptography numpy
+pip install -r requirements.txt
 python yeti_client.py --setup
-# Coordinator URL: https://<current-tunnel>.trycloudflare.com
-# Model: <your Ollama model, e.g. qwen2.5-coder:7b-instruct>
-# VRAM: <your GPU VRAM in GB>
+# Coordinator URL: https://api.soft-yeti.com
 python yeti_client.py
 ```
 
-> For a stable persistent URL (Phase 1 production): create a named Cloudflare Tunnel with a Cloudflare account. The quick tunnel is sufficient for 5-tester internal phase.
+**Local dashboard** (runs alongside the mining client):
+```powershell
+pip install fastapi uvicorn
+python client/dashboard.py
+# Opens http://localhost:8901 — toggle, balance, GPU card, PWA install
+```
+
+> **Model ladder** (auto-detected by `setup_volunteer.ps1`):
+> `<4 GB` → `qwen2.5:1.5b-instruct` · `4-6 GB` → `phi4-mini:3.8b-instruct` · `6-10 GB` → `qwen2.5-coder:7b-instruct` · `10-20 GB` → `deepseek-coder-v2:16b` · `20+ GB` → `qwen2.5-coder:32b`
+> Canary oracle validated 50/50 on both `qwen2.5:1.5b-instruct` and `qwen2.5-coder:7b-instruct`.
 
 ---
 
@@ -323,7 +326,7 @@ python yeti_client.py
 | **Security round 1** | ✅ Complete | Ed25519 submission signatures + miner_pubkey recorded in every block. Model cross-check in verifier. JCLAW_API_KEY guard on `/api/generate` + `/api/subscription/notify`. Nonce cap (500). |
 | **0→1 Bridge** | ✅ Complete | Block #1 via J-Claw YETI pool route (20s, 1.836 YETI, signed). Canary oracle 10→50 tasks (5 categories). Volunteer ID hijacking fix. Rate limiting (5/min register, 30/min submit). Wallet passphrase encryption. `setup_volunteer.ps1` bootstrap. |
 | **Security round 2** | ✅ Complete | Dual-agent (fork + Codex) security review. Reward inflation fix (token accumulation across nonce attempts). Ed25519 bypass fix (missing-pubkey volunteers now rejected). `_chain_lock` for concurrent block appends. Timeout memory leak. Failure-count enforcement. **53/53 tests pass (33 coordinator + 20 chain).** |
-| **1 — Internal testers** | ⏳ In progress | Canary temperature fix ✅, output sanitization ✅, `nonce_attempts ge=1` ✅, VRAM auto-detect + model ladder ✅, exponential backoff ✅, `normalize_canary_output()` ✅, **canary 50/50 validated ✅**, git pushed `860b39c`+`5d88680` ✅. **60/60 tests pass.** Remaining: Cloudflare tunnel URL → 3060 Ti git pull → 5-tester invite. |
+| **1 — Internal testers** | ⏳ In progress | Canary temp fix ✅, output sanitization ✅, nonce_attempts ge=1 ✅, VRAM auto-detect + model ladder ✅, exponential backoff ✅, `normalize_canary_output()` ✅, canary **50/50 on 7B** ✅ (`860b39c`+`5d88680`), PWA dashboard at localhost:8901 ✅ (`75a0116`+`bdf4557`), GPU name persisted in config ✅ (`64fb1c1`), **named tunnel live at soft-yeti.com** ✅, canary **50/50 on 1.5B** (laptop testers) ✅ (`ff02d5e`). **60/60 tests pass.** Remaining: 5-tester invite. |
 | **1.5 — Zero-protocol quality wins** | ⏭ | Deliver all N nonce-attempt outputs to J-Claw (best picked by embedding similarity). Minimum quality gate in client (filter repetition/truncation before hashing). Base rate per inference run (per_attempt_reward regardless of block win). Zero blockchain changes. |
 | **2 — Hardening + Protocol foundation** | ⏭ | Argon2 memory-hard PoW (256MB/attempt). Vulkan/PyOpenCL real GPU benchmark (backend-agnostic interface designed for mobile Metal in Phase 3). True model fingerprinting (per-model canary calibration). **Proof of Inference Depth (PoID)** — N self-refinement passes cryptographically chained; all passes delivered; reward ∝ depth; eliminates hash lottery. On-chain model registry (weights hash, reputation score, family, `model_type: standard\|bitnet`, `inference_backend: ollama\|metal\|vulkan` — mobile-ready from day one). Difficulty auto-adjustment. Subscription economy live. `SoftYetiSetup.exe` one-click installer. |
 | **3 — Quality + Decentralization** | ⏭ HARD GATE | Legal review FIRST (FinCEN MSB, KYC/AML, Howey test, App Store mining policy). Then: BFT multi-validator consensus (5-of-9 threshold sigs, staked YETI, slashing). Reference model judge (tiny fixed-weight model, hash pinned in protocol, deterministic quality scores). Peer quality committee (commit-reveal, 5-miner panels, median wins). Bayesian miner reputation (Beta distribution — churn-tolerant for mobile volunteers who disconnect on screen lock). Model diversity enforcement (≥3 model families per block). Elastic emission + 30% fee burn (deflationary at scale). DHT task queue (decentralized routing). **Mobile volunteer tier** — iOS + Android foreground-only mining via BitNet models (1.58-bit ternary weights) + QVAC Fabric (Metal/Vulkan). iPhone 16 Pro Max A18 Pro confirmed capable of 7B–13B BitNet inference. Swift iOS app via TestFlight. Separate `metal` routing pool + per-model canary oracle calibrated on iPhone hardware. |
