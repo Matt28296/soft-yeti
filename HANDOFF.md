@@ -151,10 +151,24 @@ The **core node** is the single authoritative coordinator for now. The secondary
 
 **Never run both coordinators simultaneously** — no consensus mechanism exists yet to merge diverging chains. Start the secondary only after confirming the core is truly down.
 
-**Chain sync (required for failover):** Syncthing must sync these three files from the 9070 XT to the 3060 Ti continuously:
-- `coordinator/coordinator.key` — same signing key so secondary-minted blocks are valid
+**Chain sync — implemented 2026-07-01:**
+
+Three files must stay mirrored from 9070 XT → 3060 Ti for failover to work:
+- `coordinator/coordinator.key` — same signing key so secondary-minted blocks carry valid coordinator signatures
 - `coordinator/coordinator.pub`
-- `coordinator/yeti-chain.jsonl` — current chain state
+- `coordinator/yeti-chain.jsonl` — current chain state (append-only, ~60s staleness at worst)
+
+**How it works on 9070 XT:**
+- `C:\Users\Tyler\yetiSync\` — staging folder Syncthing watches
+- `soft-yeti/sync_coordinator_files.ps1` — copies the 3 files from `coordinator/` to `yetiSync\` only when source is newer; no-op otherwise
+- Windows Scheduled Task **"Soft Yeti Chain Sync"** — runs `sync_coordinator_files.ps1` every 5 minutes (pwsh, IgnoreNew, 2-min timeout)
+- Syncthing folder **`yeti-sync`** (Send Only) — shares `yetiSync\` with 3060 Ti device `2H2Y7RC-...`; fs-watcher delay 10s; rescan every 60s
+
+**How it works on 3060 Ti (one-time setup required):**
+- Open Syncthing UI (`http://localhost:8384`) → accept the pending `yeti-sync` folder share → set **Receive Only** → point at `C:\Users\Matthew\yetiSync`
+- After ~1 minute, all 3 files appear. `start_coordinator_secondary.ps1` reads from that path by default.
+
+**Coord repo (jclaw-coord) — 3060 Ti was notified** via `msg/3060ti.md` (commit `fc74e7c`) with full setup instructions and failover procedure.
 
 ### Governance rule — majority vote for core changes
 
