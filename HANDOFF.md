@@ -151,6 +151,13 @@ The **core node** is the single authoritative coordinator for now. The secondary
 
 **Never run both coordinators simultaneously** — no consensus mechanism exists yet to merge diverging chains. Start the secondary only after confirming the core is truly down.
 
+**Automatic failover — LIVE (2026-07-01):** `coordinator_watchdog.py` runs as a detached process on the 3060 Ti (PID 31544 at deploy time), replacing manual activation.
+- Polls both `http://100.92.46.126:8900/api/health` (Tailscale) and `https://api.soft-yeti.com/api/health` (public) every 30s
+- Activates secondary only after 3 consecutive dual-check failures (90s) AND `yeti-chain.jsonl` mtime is >600s stale (fencing — proves primary is actually dead, not just unreachable via one path)
+- Auto-deactivates the instant either health check returns 200
+- Stop path kills the actual `:8900` port-listener PID via `psutil.net_connections()`, not just the PowerShell wrapper — required because `TerminateProcess()` doesn't kill uvicorn's child worker (same root cause as Phase 0 bug #5 below); this fix is applied on both the graceful-stop and unexpected-wrapper-exit paths, with a post-stop port-free verification log
+- Agreed via coord-repo governance exchange (both nodes = 2-of-2), commits `93d9eaa` (fix) on `soft-yeti` main
+
 **Chain sync — implemented 2026-07-01:**
 
 Three files must stay mirrored from 9070 XT → 3060 Ti for failover to work:
