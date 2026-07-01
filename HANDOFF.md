@@ -4,7 +4,7 @@ Date: **2026-06-30** (Phase 0 build complete)
 
 ---
 
-## Status: Phase 1 IN PROGRESS — Cloudflare Tunnel + CLI distribution
+## Status: Phase 1.5 COMPLETE — awaiting 5-tester invite (Phase 1 final gate)
 
 Phase 0 complete + security hardened + Phase 0→1 bridge complete (2026-06-30).
 
@@ -241,11 +241,12 @@ YETI_TASK_TIMEOUT_S: int = 300
 - ✅ **GPU name persisted in config (2026-07-01)**: `gpu_name` field added to `YetiConfig`; `setup_volunteer.ps1` passes `YETI_DETECTED_GPU` env var; dashboard uses persisted value with runtime fallback. Commit `64fb1c1`.
 - ✅ **Named Cloudflare tunnel live (2026-07-01)**: `soft-yeti.com`, `www.soft-yeti.com`, `api.soft-yeti.com` all route to coordinator port 8900. Stable URL — does not change on restart.
 - ✅ **Canary extended to laptop models (2026-07-01)**: ran `validate_canary.py` against `qwen2.5:1.5b-instruct` (model ladder <4GB / CPU inference). 30/50 initial failures — 1.5B fails boolean comparisons and multi-term arithmetic. Fixed 23 prompts with simple single-operation arithmetic. Added trailing punctuation strip to `normalize_canary_output()`. Raised `validate_canary.py` timeout 60s→300s (model cold-load). **50/50 on both 1.5B and 7B.** Commit `ff02d5e`. NOTE: Ollama KV-cache corruption bug discovered — `num_predict:1` warmup call poisons cache; all subsequent similar-prompt calls return EOS (empty response). Fix: never use `num_predict:1` for warmup; use `ollama stop <model>` to clear before re-testing.
+- ✅ **Phase 1.5 — Zero protocol change quality wins (2026-07-01)**: Commit `8feb6e0`. **60/60 tests pass.**
+  - Quality gate in client — `_passes_quality_gate()` in `yeti_node.py` filters outputs <20 chars or stuck in repetition loop before hash check; junk never hits the chain
+  - Best-output delivery — client accumulates all outputs in `all_outputs` (cap 10); coordinator's `best_output()` in `sanitizer.py` scores by length + repetition, delivers highest-quality output to J-Claw (not just the hash-winner)
+  - Base rate reward — `total_completion_tokens` tracked per task; `base_reward = total_ct × BASE_RATE (0.0001)` added to block gross on top of existing block reward; clients that don't send `total_completion_tokens` fall back to `ct × nonce_attempts`
+  - New block fields: `total_completion_tokens`, `base_reward`; new submission fields: `total_completion_tokens`, `all_outputs` (all optional with defaults — old clients unaffected)
 - ⏭ **Phase 1 — final gate**: send soft-yeti.com URL to 5 external testers → confirm connectivity + first block minted per tester → Phase 1 complete.
-- ⏭ **Phase 1.5 — Zero protocol change quality wins** (do immediately after Phase 1 closes):
-  - Deliver all N nonce-attempt outputs to J-Claw — `_result_store` accumulates a list; `_call_yeti()` picks best by embedding similarity. Zero blockchain changes.
-  - Minimum quality gate in client — `_passes_quality_gate()` in `yeti_node.py` filters too-short / repetition-loop outputs before hashing; failed outputs skip submission and don't count as attempts.
-  - Base rate per inference run — `per_attempt_reward = completion_tokens × 0.0001` credited to miner regardless of whether their attempt wins the block. Makes raising difficulty economically viable.
 - ⏭ **Phase 2 — Hardening + Protocol foundation**:
   - Argon2 memory-hard PoW (Theory 2) — 256MB RAM per attempt; CPU/cloud scripts without VRAM can't forge this
   - Vulkan/PyOpenCL GPU benchmark — replace numpy stub with real GPU timing proof; **design backend-agnostic benchmark interface (Metal/Vulkan/CUDA) now** — avoids Phase 3 rewrite when mobile tier lands
