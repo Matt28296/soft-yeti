@@ -5,7 +5,7 @@ inference loops until interrupted. Tray icon (pystray) is optional — falls bac
 to CLI when pystray / Pillow are not installed.
 
 Usage:
-    python yeti_client.py [--setup]   # --setup generates wallet + config interactively
+    python yeti_client.py [--setup]   # --setup scans hardware + generates wallet, no prompts
     python yeti_client.py             # start mining with existing config
 """
 from __future__ import annotations
@@ -22,6 +22,7 @@ from pathlib import Path
 
 import requests
 
+import secret_store
 from chain_client import ChainClient
 from yeti_config import DEFAULT_CONFIG_PATH, YetiConfig
 from yeti_node import start as node_start, stop as node_stop
@@ -34,44 +35,62 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+DEFAULT_COORDINATOR_URL = "https://api.soft-yeti.com"
+WALLET_KEY_PATH = Path.home() / ".soft_yeti" / "wallet.key"
+
 
 # ── Setup wizard ──────────────────────────────────────────────────────────────
 
 def _setup(cfg_path: Path) -> None:
-    """Interactive first-run setup: generate wallet, register volunteer, save config."""
-    print("\n=== Soft Yeti Setup ===\n")
-    coordinator_url = input("Coordinator URL [http://localhost:8000]: ").strip() or "http://localhost:8000"
+    """Non-interactive first-run setup: no prompts, ever.
 
-    # setup_volunteer.ps1 passes detected GPU defaults via env vars
+    setup_volunteer.ps1 scans the machine (GPU/VRAM) and passes the result in
+    via env vars; this just consumes them, generates or reuses a wallet, and
+    registers with the coordinator. The volunteer's only interaction with the
+    product is the dashboard on/off toggle.
+
+    Re-running this (e.g. after a coordinator restart, or a re-run of
+    setup.bat to pick up a fix) reuses the existing wallet + volunteer_id
+    instead of silently orphaning them — only a fresh identity is generated
+    the very first time.
+    """
+    print("\n=== Soft Yeti Setup (automatic) ===\n")
+
+    coordinator_url = os.environ.get("YETI_COORDINATOR_URL", DEFAULT_COORDINATOR_URL).strip() or DEFAULT_COORDINATOR_URL
     default_model = os.environ.get("YETI_DETECTED_MODEL", "qwen2.5-coder:7b-instruct")
     default_vram  = os.environ.get("YETI_DETECTED_VRAM", "8.0")
     detected_gpu  = os.environ.get("YETI_DETECTED_GPU", "")
 
-    model_name = input(f"Ollama model name [{default_model}]: ").strip() or default_model
+    model_name = default_model
     try:
-        vram_gb_str = input(f"GPU VRAM in GB [{default_vram}]: ").strip() or default_vram
-        vram_gb = float(vram_gb_str)
+        vram_gb = float(default_vram)
     except ValueError:
-        vram_gb = float(default_vram) if default_vram.replace(".", "", 1).isdigit() else 8.0
+        vram_gb = 8.0
 
     wallet_path = Path.home() / ".soft_yeti" / "wallet.json"
-    print(f"\nGenerating Ed25519 wallet → {wallet_path}")
-    print("Set a passphrase to encrypt the wallet file (recommended).")
-    print("Press Enter twice to skip encryption (not recommended).")
-    while True:
-        passphrase = getpass.getpass("Wallet passphrase: ")
-        confirm = getpass.getpass("Confirm passphrase: ")
-        if passphrase == confirm:
-            break
-        print("Passphrases do not match — try again.")
-    if not passphrase:
-        print("Warning: wallet will be stored unencrypted.")
-    wallet = generate_wallet()
-    save_wallet(wallet, wallet_path, passphrase=passphrase)
-    print(f"Wallet address: {wallet['address']}")
+    existing_cfg = YetiConfig.load(cfg_path) if cfg_path.exists() else None
 
-    volunteer_id = f"volunteer-{secrets.token_hex(6)}"
-    print(f"\nRegistering volunteer {volunteer_id} with coordinator...")
+    if existing_cfg and existing_cfg.volunteer_id and wallet_path.exists():
+        print("Existing wallet + volunteer identity found — reusing them, refreshing registration.")
+        try:
+            passphrase = secret_store.load_passphrase(WALLET_KEY_PATH) or ""
+            wallet = load_wallet(wallet_path, passphrase=passphrase)
+        except Exception as exc:
+            print(f"[error] Could not unlock existing wallet ({exc}). Move or delete {wallet_path} to start fresh.")
+            sys.exit(1)
+        volunteer_id = existing_cfg.volunteer_id
+    else:
+        print(f"Generating Ed25519 wallet -> {wallet_path}")
+        passphrase = secrets.token_urlsafe(32)
+        wallet = generate_wallet()
+        save_wallet(wallet, wallet_path, passphrase=passphrase)
+        secret_store.save_passphrase(WALLET_KEY_PATH, passphrase)
+        print("Wallet encrypted at rest; the key is protected for your Windows account only —")
+        print("there's no passphrase to remember or type.")
+        volunteer_id = f"volunteer-{secrets.token_hex(6)}"
+
+    print(f"Wallet address: {wallet['address']}")
+    print(f"\nRegistering volunteer {volunteer_id} with {coordinator_url} ...")
     try:
         resp = requests.post(
             f"{coordinator_url.rstrip('/')}/api/register",
@@ -85,13 +104,12 @@ def _setup(cfg_path: Path) -> None:
             timeout=10,
         )
         resp.raise_for_status()
-        payload = resp.json()
-        api_key = payload["api_key"]
+        api_key = resp.json()["api_key"]
         print("Registration successful.")
     except Exception as exc:
         print(f"Registration failed: {exc}")
-        print("Saving config without API key — re-run setup once coordinator is reachable.")
-        api_key = ""
+        print("Saving config without a fresh API key — will retry automatically once the coordinator is reachable.")
+        api_key = existing_cfg.api_key if existing_cfg else ""
 
     cfg = YetiConfig(
         coordinator_url=coordinator_url,
@@ -105,7 +123,7 @@ def _setup(cfg_path: Path) -> None:
     )
     cfg.save(cfg_path)
     print(f"\nConfig saved to {cfg_path}")
-    print("Run  python yeti_client.py  to start mining.\n")
+    print("Setup complete — open the dashboard and use the toggle to start mining.\n")
 
 
 # ── Tray icon (optional) ──────────────────────────────────────────────────────
@@ -200,7 +218,17 @@ def main() -> None:
 
     raw_payload = json.loads(wallet_path.read_text(encoding="utf-8"))
     if raw_payload.get("encrypted"):
-        wallet_passphrase = getpass.getpass("Wallet passphrase: ")
+        wallet_passphrase = secret_store.load_passphrase(WALLET_KEY_PATH)
+        if wallet_passphrase is None:
+            if sys.stdin.isatty():
+                wallet_passphrase = getpass.getpass("Wallet passphrase: ")
+            else:
+                # Launched headlessly (e.g. by the dashboard toggle) with no
+                # stored key and no attached terminal -- fail fast instead of
+                # hanging forever on a prompt nobody can answer.
+                print(f"Encrypted wallet found but no stored key at {WALLET_KEY_PATH} and no "
+                      f"terminal to prompt in. Run:  python yeti_client.py --setup")
+                sys.exit(1)
     else:
         wallet_passphrase = ""
     wallet = load_wallet(wallet_path, passphrase=wallet_passphrase)

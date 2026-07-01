@@ -1,9 +1,15 @@
 # Soft Yeti - volunteer setup script (Windows)
-# Run once from the soft-yeti/ directory, then run:  python client\yeti_client.py
+# Fully automatic: scans your GPU, installs Ollama + the right model, generates
+# an encrypted wallet, and registers with the coordinator. No prompts. Once
+# this finishes, the dashboard on/off toggle is the only thing you touch.
 #
 # Prerequisites (must be installed before running this):
 #   - Python 3.11+    https://python.org/downloads
 # Ollama is installed automatically below if not already present.
+
+param(
+    [string]$CoordinatorUrl = "https://api.soft-yeti.com"
+)
 
 $ErrorActionPreference = "Stop"
 $Root      = $PSScriptRoot
@@ -42,15 +48,33 @@ if (Test-OllamaReachable) {
     $OllamaInstaller = Join-Path $env:TEMP "OllamaSetup.exe"
     try {
         Invoke-WebRequest -Uri "https://ollama.com/download/OllamaSetup.exe" -OutFile $OllamaInstaller -UseBasicParsing
-        Write-Host "[setup] Running Ollama installer (this can take a minute)..."
-        Start-Process -FilePath $OllamaInstaller -ArgumentList "/VERYSILENT", "/NORESTART", "/SUPPRESSMSGBOXES" -Wait
+        Write-Host "[setup] Running Ollama installer (silent - this can take a few minutes on first install)..." -NoNewline
+
+        # Don't use -Wait: it gives zero feedback for however long the silent
+        # install takes, which reads as "frozen". Poll the process instead so
+        # something prints, with a generous timeout rather than blocking forever.
+        $proc = Start-Process -FilePath $OllamaInstaller -ArgumentList "/VERYSILENT", "/NORESTART", "/SUPPRESSMSGBOXES" -PassThru
+        $installTimeoutSec = 300
+        $elapsed = 0
+        while (-not $proc.HasExited -and $elapsed -lt $installTimeoutSec) {
+            Start-Sleep -Seconds 5
+            $elapsed += 5
+            Write-Host "." -NoNewline
+        }
+        Write-Host ""
+        if (-not $proc.HasExited) {
+            Write-Host "[warning] Installer still running after ${installTimeoutSec}s - continuing; it will finish in the background." -ForegroundColor Yellow
+        }
         Remove-Item $OllamaInstaller -ErrorAction SilentlyContinue
 
         $ready = $false
-        for ($i = 0; $i -lt 30; $i++) {
+        Write-Host "[setup] Waiting for Ollama to start..." -NoNewline
+        for ($i = 0; $i -lt 60; $i++) {
             Start-Sleep -Seconds 2
             if (Test-OllamaReachable) { $ready = $true; break }
+            if ($i % 5 -eq 4) { Write-Host "." -NoNewline }
         }
+        Write-Host ""
         if ($ready) {
             Write-Host "[ok] Ollama installed and running."
         } else {
@@ -92,20 +116,51 @@ if ($DetectedVRAM -eq 0) {
     } catch {}
 }
 
-# Fallback: wmic (Windows only, NVIDIA/AMD both report AdapterRAM)
+# Registry fallback (works for AMD/Intel/anything without a vendor CLI tool).
+# HardwareInformation.qwMemorySize is a 64-bit value written by the driver --
+# unlike WMI's Win32_VideoController.AdapterRAM (see below), it doesn't wrap
+# around on cards with more than 4GB VRAM.
+if ($DetectedVRAM -eq 0) {
+    try {
+        $classKey = "HKLM:\SYSTEM\CurrentControlSet\Control\Class\{4d36e968-e325-11ce-bfc1-08002be10318}"
+        $best = 0
+        $bestName = $null
+        Get-ChildItem -Path $classKey -ErrorAction SilentlyContinue |
+            Where-Object { $_.PSChildName -match '^\d{4}$' } |
+            ForEach-Object {
+                $props = Get-ItemProperty -Path $_.PSPath -ErrorAction SilentlyContinue
+                $mem = $props.'HardwareInformation.qwMemorySize'
+                if ($mem -and [double]$mem -gt $best) {
+                    $best = [double]$mem
+                    $bestName = $props.DriverDesc
+                }
+            }
+        if ($best -gt 0) {
+            $DetectedVRAM = [math]::Round($best / 1GB, 1)
+            $DetectedGPU  = $bestName
+            Write-Host "[ok] GPU detected via registry: $DetectedGPU ($DetectedVRAM GB VRAM)"
+        }
+    } catch {}
+}
+
+# Last-resort fallback: WMI AdapterRAM. KNOWN BUG (Windows, not this script):
+# AdapterRAM is a 32-bit field and wraps around on GPUs with >4GB VRAM (e.g.
+# reports ~4GB on a 16GB card), so this only runs if every method above found
+# nothing -- it's better than no number, but the registry method above should
+# fire first on any modern driver.
 if ($DetectedVRAM -eq 0) {
     try {
         $wmicOut = Get-WmiObject Win32_VideoController | Where-Object { $_.AdapterRAM -gt 0 } | Select-Object -First 1
         if ($wmicOut) {
             $DetectedVRAM = [math]::Round($wmicOut.AdapterRAM / 1GB, 1)
             $DetectedGPU  = $wmicOut.Name
-            Write-Host "[ok] GPU detected via WMI: $DetectedGPU ($DetectedVRAM GB VRAM)"
+            Write-Host "[warning] GPU VRAM detected via legacy WMI field, which under-reports on GPUs >4GB: $DetectedGPU ($DetectedVRAM GB VRAM reported)" -ForegroundColor Yellow
         }
     } catch {}
 }
 
 if ($DetectedVRAM -eq 0) {
-    Write-Host "[warning] Could not detect GPU VRAM automatically. Will ask manually." -ForegroundColor Yellow
+    Write-Host "[warning] Could not detect GPU VRAM automatically. Defaulting to the safest small model." -ForegroundColor Yellow
 }
 
 # -- 4. Pick model from ladder --------------------------------------------------
@@ -125,7 +180,7 @@ else                           { $RecommendedModel = "qwen2.5-coder:7b-instruct"
 
 Write-Host ""
 Write-Host "Recommended model for your GPU: $RecommendedModel ($ModelSize)" -ForegroundColor Green
-Write-Host "  (based on $DetectedVRAM GB detected VRAM - press Enter to accept or type a different model)"
+Write-Host "  (based on $DetectedVRAM GB detected VRAM)"
 Write-Host ""
 
 # -- 5. Pull the inference model (if missing) ----------------------------------
@@ -161,31 +216,31 @@ Write-Host "[ok] Requirements installed."
 
 # -- 8. Run setup wizard --------------------------------------------------------
 Write-Host ""
-Write-Host "=== First-time wallet + registration setup ===" -ForegroundColor Cyan
+Write-Host "=== Wallet + registration setup (automatic) ===" -ForegroundColor Cyan
 Write-Host ""
-Write-Host "You will be asked for:"
-Write-Host "  - Coordinator URL    (provided by the network operator)"
-Write-Host "  - Ollama model       (default: $ModelName - recommended for your GPU)"
-Write-Host "  - GPU VRAM in GB     (detected: $DetectedVRAM GB)"
-Write-Host "  - Wallet passphrase  (encrypts your wallet file - pick something you'll remember)"
+Write-Host "Coordinator: $CoordinatorUrl"
+Write-Host "Model:       $ModelName ($ModelSize)"
+Write-Host "GPU:         $DetectedGPU ($DetectedVRAM GB VRAM)"
 Write-Host ""
-Write-Host "IMPORTANT: Your wallet passphrase protects ~\.soft_yeti\wallet.json."
-Write-Host "           Without it you cannot start mining. There is no recovery if you forget it."
+Write-Host "A wallet is generated and encrypted automatically - Windows protects the"
+Write-Host "key for your account, so there's nothing for you to remember or type."
 Write-Host ""
 
-# Pass detected values as env vars so the setup wizard can pre-fill them
-$env:YETI_DETECTED_VRAM  = "$DetectedVRAM"
-$env:YETI_DETECTED_MODEL = $ModelName
-$env:YETI_DETECTED_GPU   = $DetectedGPU
+# Pass detected values as env vars so setup is fully non-interactive
+$env:YETI_COORDINATOR_URL = $CoordinatorUrl
+$env:YETI_DETECTED_VRAM   = "$DetectedVRAM"
+$env:YETI_DETECTED_MODEL  = $ModelName
+$env:YETI_DETECTED_GPU    = $DetectedGPU
 
 Push-Location $ClientDir
 try {
     & $Python yeti_client.py --setup
 } finally {
     Pop-Location
-    $env:YETI_DETECTED_VRAM  = $null
-    $env:YETI_DETECTED_MODEL = $null
-    $env:YETI_DETECTED_GPU   = $null
+    $env:YETI_COORDINATOR_URL = $null
+    $env:YETI_DETECTED_VRAM   = $null
+    $env:YETI_DETECTED_MODEL  = $null
+    $env:YETI_DETECTED_GPU    = $null
 }
 
 Write-Host ""
