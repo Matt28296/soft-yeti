@@ -307,8 +307,10 @@ YETI_TASK_TIMEOUT_S: int = 300
   - Best-output delivery — client accumulates all outputs in `all_outputs` (cap 10); coordinator's `best_output()` in `sanitizer.py` scores by length + repetition, delivers highest-quality output to J-Claw (not just the hash-winner)
   - Base rate reward — `total_completion_tokens` tracked per task; `base_reward = total_ct × BASE_RATE (0.0001)` added to block gross on top of existing block reward; clients that don't send `total_completion_tokens` fall back to `ct × nonce_attempts`
   - New block fields: `total_completion_tokens`, `base_reward`; new submission fields: `total_completion_tokens`, `all_outputs` (all optional with defaults — old clients unaffected)
+- ✅ **Block explorer (2026-07-01)**: `/explorer` route added to coordinator. SPA served from the same FastAPI process — no new service. Hash-routing: `#block/{n}` for block detail, `#wallet/{addr}` for wallet lookup. Reads directly from JSONL via existing `/chain/*` endpoints. Landing page links to it. Phase 2 upgrade: replace JSONL scan with SQLite index for sub-ms lookups at scale.
 - ⏭ **Phase 1 — final gate**: send soft-yeti.com URL to 5 external testers → confirm connectivity + first block minted per tester → Phase 1 complete.
 - ⏭ **Phase 2 — Hardening + Protocol foundation**:
+  - Block explorer SQLite index — replace JSONL linear scan with SQLite index on `(miner_wallet, index, timestamp)` for sub-ms balance/history queries at scale; current JSONL scan is fine for hundreds of blocks but degrades linearly
   - Argon2 memory-hard PoW (Theory 2) — 256MB RAM per attempt; CPU/cloud scripts without VRAM can't forge this
   - Vulkan/PyOpenCL GPU benchmark — replace numpy stub with real GPU timing proof; **design backend-agnostic benchmark interface (Metal/Vulkan/CUDA) now** — avoids Phase 3 rewrite when mobile tier lands
   - True model fingerprinting — per-model expected-output calibration (replace name-match-only); first 10 tasks after registration are model-specific canary checks

@@ -102,6 +102,260 @@ async def _require_jclaw_auth(request: Request) -> None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid J-Claw API key")
 
 
+_EXPLORER_HTML = """\
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Soft Yeti — Chain Explorer</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#0a0a0f;color:#e8e8f0;min-height:100vh}
+a{color:#a78bfa;text-decoration:none}
+a:hover{text-decoration:underline}
+.hdr{background:#0d0d16;border-bottom:1px solid #1e1e30;padding:.9rem 1.5rem;display:flex;align-items:center;gap:1.25rem;flex-wrap:wrap}
+.logo{font-size:1.2rem;font-weight:800;background:linear-gradient(135deg,#a78bfa,#60a5fa);-webkit-background-clip:text;-webkit-text-fill-color:transparent;white-space:nowrap}
+.chain-stats{display:flex;gap:1.25rem;font-size:.78rem;color:#5050a0;margin-left:auto;flex-wrap:wrap}
+.chain-stats span{color:#c0c0e0;font-weight:600}
+.search-bar{display:flex;gap:.5rem;padding:.6rem 1.5rem;background:#0d0d16;border-bottom:1px solid #181828}
+.search-bar input{flex:1;max-width:520px;background:#12121c;border:1px solid #2a2a3e;border-radius:8px;padding:.5rem .9rem;color:#e8e8f0;font-size:.85rem;outline:none;font-family:monospace}
+.search-bar input:focus{border-color:#7c3aed}
+.search-bar input::placeholder{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;color:#404060}
+.search-bar button{background:#7c3aed;color:#fff;border:none;border-radius:8px;padding:.5rem 1.1rem;font-size:.85rem;cursor:pointer;font-weight:600}
+.search-bar button:hover{background:#6d28d9}
+.main{padding:1.25rem 1.5rem;max-width:1080px;margin:0 auto}
+.section-label{font-size:.72rem;font-weight:700;color:#404070;text-transform:uppercase;letter-spacing:.08em;margin-bottom:.75rem}
+.card{background:#12121c;border:1px solid #1e1e30;border-radius:12px;overflow:hidden;margin-bottom:1.25rem}
+table{width:100%;border-collapse:collapse;font-size:.83rem}
+th{text-align:left;padding:.55rem 1rem;color:#404070;font-weight:700;font-size:.7rem;text-transform:uppercase;letter-spacing:.06em;border-bottom:1px solid #181828;white-space:nowrap}
+td{padding:.65rem 1rem;border-bottom:1px solid #13131f;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:220px}
+tr:last-child td{border-bottom:none}
+tr:hover td{background:#14141f}
+.mono{font-family:monospace;font-size:.78rem;color:#8080b0}
+.reward{color:#86efac;font-weight:600}
+.dimmed{color:#404070;font-size:.75rem}
+.kv{display:grid;grid-template-columns:190px 1fr;gap:0}
+.kv-k{padding:.6rem 1rem;color:#404070;font-size:.78rem;font-weight:700;border-bottom:1px solid #13131f;background:#0f0f1a;white-space:nowrap}
+.kv-v{padding:.6rem 1rem;font-family:monospace;font-size:.78rem;border-bottom:1px solid #13131f;word-break:break-all}
+.kv-k:last-of-type,.kv-v:last-of-type{border-bottom:none}
+.nav-row{display:flex;gap:.6rem;margin-bottom:1rem;align-items:center;flex-wrap:wrap}
+.btn{background:#1a1a28;border:1px solid #252538;color:#9090b0;padding:.4rem .9rem;border-radius:8px;font-size:.8rem;cursor:pointer;display:inline-block;white-space:nowrap}
+.btn:hover{background:#20203a;color:#e0e0f0;text-decoration:none}
+.balance-box{padding:1.25rem 1rem;display:grid;grid-template-columns:repeat(3,1fr);gap:1rem}
+.stat-box{background:#0f0f1a;border:1px solid #1a1a2a;border-radius:8px;padding:.75rem 1rem}
+.stat-label{font-size:.7rem;color:#404070;text-transform:uppercase;letter-spacing:.06em;margin-bottom:.3rem}
+.stat-val{font-size:1.15rem;font-weight:700;color:#e0e0f0}
+.stat-val.yeti{color:#86efac}
+.empty-state{padding:2.5rem;text-align:center;color:#303050;font-size:.9rem}
+.error-state{padding:2.5rem;text-align:center;color:#f87171;font-size:.9rem}
+@media(max-width:640px){
+  td,th{padding:.5rem .65rem}
+  .main{padding:1rem}
+  .kv{grid-template-columns:130px 1fr}
+  .balance-box{grid-template-columns:1fr 1fr}
+}
+</style>
+</head>
+<body>
+<div id="root"><div class="empty-state">Loading…</div></div>
+<script>
+// ── helpers ──────────────────────────────────────────────────────────────────
+function esc(s){const d=document.createElement('div');d.textContent=String(s??'');return d.innerHTML}
+function h(tag,cls,inner){return '<'+tag+(cls?' class="'+cls+'"':'')+'>'+inner+'</'+tag+'>'}
+function fmt_hash(s){return s?s.slice(0,10)+'…'+s.slice(-4):'—'}
+function fmt_wallet(s){return s?s.slice(0,10)+'…'+s.slice(-5):'—'}
+function fmt_yeti(n){return n==null?'—':(+n).toFixed(4)+' YETI'}
+function fmt_time(ts){
+  if(!ts)return '—';
+  const diff=(Date.now()/1000)-ts;
+  if(diff<60)return Math.floor(diff)+'s ago';
+  if(diff<3600)return Math.floor(diff/60)+'m ago';
+  if(diff<86400)return Math.floor(diff/3600)+'h ago';
+  return new Date(ts*1000).toLocaleDateString();
+}
+function fmt_ts_full(ts){
+  if(!ts)return '—';
+  return new Date(ts*1000).toISOString().replace('T',' ').replace(/\\.\\d+Z$/,' UTC');
+}
+
+// ── API ───────────────────────────────────────────────────────────────────────
+async function GET(path){
+  const r=await fetch(path);
+  if(!r.ok)throw new Error(r.status+' '+r.statusText);
+  return r.json();
+}
+
+// ── state ─────────────────────────────────────────────────────────────────────
+let _height=0, _chainId='yeti-testnet';
+
+async function refreshStats(){
+  try{
+    const h=await GET('/chain/height');
+    _height=h.height||0;
+    if(_height>0){const b=await GET('/chain/latest');_chainId=b.chain_id||_chainId;}
+  }catch(e){}
+}
+
+// ── header ─────────────────────────────────────────────────────────────────────
+function renderHeader(){
+  return '<div class="hdr">'
+    +'<a href="#" class="logo">⬡ Soft Yeti Explorer</a>'
+    +'<div class="chain-stats">'
+    +'<div>Height&nbsp;<span>'+_height+'</span></div>'
+    +'<div>Chain&nbsp;<span>'+esc(_chainId)+'</span></div>'
+    +'<a href="/" style="color:#5050a0;font-size:.75rem">← Home</a>'
+    +'</div>'
+    +'</div>'
+    +'<div class="search-bar">'
+    +'<input id="sq" placeholder="Block number or wallet address" />'
+    +'<button onclick="doSearch()">Search</button>'
+    +'</div>';
+}
+
+function doSearch(){
+  const v=(document.getElementById('sq')||{}).value||'';
+  const s=v.trim();
+  if(!s)return;
+  location.hash=s.match(/^\\d+$/)?'block/'+s:'wallet/'+s;
+}
+document.addEventListener('keydown',e=>{if(e.key==='Enter'&&document.activeElement?.id==='sq')doSearch();});
+
+// ── home view ─────────────────────────────────────────────────────────────────
+async function viewHome(){
+  await refreshStats();
+  const blocks=[];
+  const from=Math.max(0,_height-12);
+  for(let i=_height-1;i>=from;i--){
+    try{blocks.push(await GET('/chain/block/'+i));}catch(e){}
+  }
+  const rows=blocks.length?blocks.map(b=>
+    '<tr>'
+    +'<td><a href="#block/'+b.index+'">#'+b.index+'</a></td>'
+    +'<td class="mono" title="'+esc(b.block_hash)+'">'+fmt_hash(b.block_hash)+'</td>'
+    +'<td class="mono"><a href="#wallet/'+esc(b.miner_wallet)+'">'+fmt_wallet(b.miner_wallet)+'</a></td>'
+    +'<td class="reward">'+fmt_yeti(b.miner_reward)+'</td>'
+    +'<td class="dimmed">'+fmt_time(b.timestamp)+'</td>'
+    +'<td class="dimmed">'+esc(b.nonce_attempts)+' nonce'+(b.nonce_attempts===1?'':'s')+'</td>'
+    +'<td class="dimmed">'+(b.model_name||'—')+'</td>'
+    +'</tr>'
+  ).join(''):'<tr><td colspan="7" class="empty-state">No blocks yet</td></tr>';
+
+  document.getElementById('root').innerHTML=renderHeader()
+    +'<div class="main">'
+    +'<div class="section-label">Recent Blocks</div>'
+    +'<div class="card"><table>'
+    +'<thead><tr><th>Block</th><th>Hash</th><th>Miner</th><th>Reward</th><th>Age</th><th>Nonce</th><th>Model</th></tr></thead>'
+    +'<tbody>'+rows+'</tbody>'
+    +'</table></div>'
+    +'</div>';
+}
+
+// ── block detail ──────────────────────────────────────────────────────────────
+async function viewBlock(index){
+  await refreshStats();
+  let b;
+  try{b=await GET('/chain/block/'+index);}catch(e){
+    document.getElementById('root').innerHTML=renderHeader()
+      +'<div class="main"><div class="nav-row"><a class="btn" href="#">← All Blocks</a></div>'
+      +'<div class="error-state">Block #'+esc(index)+' not found</div></div>';
+    return;
+  }
+  const fields=[
+    ['Index',b.index],
+    ['Block Hash',esc(b.block_hash)],
+    ['Prev Hash',esc(b.prev_hash)],
+    ['Chain ID',esc(b.chain_id)],
+    ['Timestamp',esc(fmt_ts_full(b.timestamp))],
+    ['Miner Wallet','<a href="#wallet/'+esc(b.miner_wallet)+'">'+esc(b.miner_wallet)+'</a>'],
+    ['Miner Reward','<span class="reward">'+fmt_yeti(b.miner_reward)+'</span>'],
+    ['Base Reward',b.base_reward!=null?fmt_yeti(b.base_reward):'—'],
+    ['Treasury Reward',fmt_yeti(b.treasury_reward)],
+    ['Nonce Attempts',esc(b.nonce_attempts)],
+    ['Completion Tokens',esc(b.completion_tokens)],
+    ['Total Completion Tokens',b.total_completion_tokens!=null?esc(b.total_completion_tokens):'—'],
+    ['Prompt Tokens',esc(b.prompt_tokens)],
+    ['Model',esc(b.model_name||'—')],
+    ['Volunteer',esc(b.volunteer_id)],
+    ['Task ID',esc(b.task_id)],
+    ['Difficulty Target',esc(b.difficulty_target)||'(none)'],
+    ['Output Hash',esc(b.output_hash)],
+    ['Task Content Hash',esc(b.task_content_hash)],
+    ['Coordinator Sig','<span class="mono">'+esc(b.coordinator_signature)+'</span>'],
+    ['Version',esc(b.version)],
+  ];
+  const kv=fields.map(([k,v])=>'<div class="kv-k">'+k+'</div><div class="kv-v">'+v+'</div>').join('');
+  const prev=index>0?'<a class="btn" href="#block/'+(index-1)+'">← Block '+(index-1)+'</a>':'';
+  const next=index<_height-1?'<a class="btn" href="#block/'+(index+1)+'">Block '+(index+1)+' →</a>':'';
+  document.getElementById('root').innerHTML=renderHeader()
+    +'<div class="main">'
+    +'<div class="nav-row"><a class="btn" href="#">← All Blocks</a>'+prev+next+'</div>'
+    +'<div class="section-label">Block #'+esc(index)+'</div>'
+    +'<div class="card"><div class="kv">'+kv+'</div></div>'
+    +'</div>';
+}
+
+// ── wallet view ───────────────────────────────────────────────────────────────
+async function viewWallet(addr){
+  if(!addr){viewHome();return;}
+  await refreshStats();
+  let bal,hist;
+  try{
+    [bal,hist]=await Promise.all([GET('/chain/balance/'+addr),GET('/chain/history/'+addr)]);
+  }catch(e){
+    document.getElementById('root').innerHTML=renderHeader()
+      +'<div class="main"><div class="nav-row"><a class="btn" href="#">← All Blocks</a></div>'
+      +'<div class="error-state">Failed to load wallet</div></div>';
+    return;
+  }
+  const blocks=[...(hist.blocks||[])].reverse();
+  const rows=blocks.length?blocks.map(b=>
+    '<tr>'
+    +'<td><a href="#block/'+b.index+'">#'+b.index+'</a></td>'
+    +'<td class="mono" title="'+esc(b.block_hash)+'">'+fmt_hash(b.block_hash)+'</td>'
+    +'<td class="reward">'+fmt_yeti(b.miner_reward)+'</td>'
+    +'<td class="dimmed">'+fmt_time(b.timestamp)+'</td>'
+    +'<td class="dimmed">'+esc(b.nonce_attempts)+' nonce'+(b.nonce_attempts===1?'':'s')+'</td>'
+    +'</tr>'
+  ).join(''):'<tr><td colspan="5" class="empty-state">No blocks mined</td></tr>';
+
+  const total=fmt_yeti(bal.balance_yeti);
+  document.getElementById('root').innerHTML=renderHeader()
+    +'<div class="main">'
+    +'<div class="nav-row"><a class="btn" href="#">← All Blocks</a></div>'
+    +'<div class="section-label">Wallet</div>'
+    +'<div class="card">'
+    +'<div class="balance-box">'
+    +'<div class="stat-box"><div class="stat-label">Address</div><div class="stat-val mono" style="font-size:.7rem;color:#8080b0;word-break:break-all">'+esc(addr)+'</div></div>'
+    +'<div class="stat-box"><div class="stat-label">Balance</div><div class="stat-val yeti">'+esc(total)+'</div></div>'
+    +'<div class="stat-box"><div class="stat-label">Blocks Mined</div><div class="stat-val">'+esc(blocks.length)+'</div></div>'
+    +'</div></div>'
+    +'<div class="section-label">Mining History</div>'
+    +'<div class="card"><table>'
+    +'<thead><tr><th>Block</th><th>Hash</th><th>Reward</th><th>Age</th><th>Nonce</th></tr></thead>'
+    +'<tbody>'+rows+'</tbody>'
+    +'</table></div>'
+    +'</div>';
+}
+
+// ── router ────────────────────────────────────────────────────────────────────
+async function route(){
+  const hash=location.hash.replace(/^#\\/?/,'');
+  const slash=hash.indexOf('/');
+  const view=slash<0?hash:hash.slice(0,slash);
+  const arg=slash<0?'':hash.slice(slash+1);
+  if(view==='block')await viewBlock(parseInt(arg,10));
+  else if(view==='wallet')await viewWallet(arg);
+  else await viewHome();
+}
+
+window.addEventListener('hashchange',route);
+route();
+</script>
+</body>
+</html>
+"""
+
 _LANDING_HTML = """\
 <!DOCTYPE html>
 <html lang="en">
@@ -174,7 +428,7 @@ code{
 cd soft-yeti
 powershell -ExecutionPolicy Bypass -File setup_volunteer.ps1</code>
 </div>
-<div class="gh">Open source on <a href="https://github.com/Matt28296/soft-yeti" target="_blank">GitHub</a></div>
+<div class="gh">Open source on <a href="https://github.com/Matt28296/soft-yeti" target="_blank">GitHub</a> &nbsp;·&nbsp; <a href="/explorer">Chain Explorer</a></div>
 </body>
 </html>
 """
@@ -183,6 +437,11 @@ powershell -ExecutionPolicy Bypass -File setup_volunteer.ps1</code>
 @app.get("/", response_class=HTMLResponse)
 async def landing() -> HTMLResponse:
     return HTMLResponse(_LANDING_HTML)
+
+
+@app.get("/explorer", response_class=HTMLResponse)
+async def explorer() -> HTMLResponse:
+    return HTMLResponse(_EXPLORER_HTML)
 
 
 @app.get("/download/setup.ps1", response_class=PlainTextResponse)
