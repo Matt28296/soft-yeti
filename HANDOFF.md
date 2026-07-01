@@ -343,6 +343,19 @@ YETI_TASK_TIMEOUT_S: int = 300
 
 ---
 
+## Pre-tester pretest + live tester feedback (2026-07-01)
+
+**Pretest (before sending 5-tester invites):** ran a full end-to-end test through the public `soft-yeti.com` tunnel — throwaway wallet → register → self-assign task → real Ollama inference/nonce search → signed submit → confirm on-chain. Two bugs caught before real testers hit them:
+
+1. **Stale coordinator process** — the coordinator hadn't been restarted since Phase 1.5 (`8feb6e0`) was written to disk (`schemas.py` modified 01:02:31, process running since 22:46:21 the night before). Every submission was rejected with `422 extra_forbidden` on `total_completion_tokens`/`all_outputs` — a tester's machine would do all the mining work and get rejected at the last step. **Fix:** restarted the coordinator (killed the actual `:8900` listener PID directly, not the wrapper — verified no orphaned process afterward). **Lesson: the coordinator does not hot-reload; any code change requires an explicit restart + health-check verification before it's actually live.**
+2. (Test methodology, not a real bug) A trivial arithmetic test prompt gave the model zero output variance even at temperature 0.3 — collapsed the nonce search to a single fixed hash. Fixed by switching to an open-ended creative-writing test prompt.
+
+Retest after the restart: full pass — Block #2 minted, 59.69 YETI, confirmed via the public URL.
+
+**First real tester feedback:** clicking "Download Setup Script" on the landing page, then double-clicking the downloaded `.ps1` file, triggers Windows' "select an app to open this file" picker instead of running it — standard Windows behavior (`.ps1` isn't execute-on-double-click by default for security reasons; even "Run with PowerShell" from the right-click menu can still be blocked by the default execution policy). **Fix (commit `37e423d`):** landing page now tells users explicitly, right under the download button, not to double-click the file and instead open PowerShell in the Downloads folder and run `powershell -ExecutionPolicy Bypass -File .\setup_volunteer.ps1`. Coordinator restarted again to pick up the change; confirmed live on the public landing page.
+
+---
+
 ## Bugs found and fixed during Phase 0 validation (2026-06-30)
 
 1. **`get_next_task` serialized as `TaskRequest` not `TaskAssignment`** — `response_model=TaskRequest | dict` caused FastAPI to strip `task_salt`, `difficulty_target`, `system`, `temperature`, `is_canary` from the response. Fix: `response_model=TaskAssignment`, return type `TaskAssignment`. This was the main Phase 0 blocker.
