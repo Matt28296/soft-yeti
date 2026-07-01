@@ -144,6 +144,7 @@ h1{
 }
 .dl:hover{opacity:.88}
 .manual{font-size:.85rem;color:#4a4a7a;margin-top:.5rem}
+.manual strong{color:#8080c0}
 code{
   display:block;background:#12121c;border:1px solid #2a2a3e;
   border-radius:8px;padding:.8rem 1rem;margin:.6rem auto 0;
@@ -165,6 +166,9 @@ code{
 </div>
 <a href="/download/setup.ps1" class="dl">⬇&nbsp; Download Setup Script</a>
 <div class="manual">
+  <p><strong>After downloading, don't double-click the file</strong> — Windows will ask you to pick an app instead of running it. Do this instead:</p>
+  <p>Open PowerShell in your Downloads folder (Shift+Right-click the folder → "Open PowerShell window here"), then run:</p>
+  <code>powershell -ExecutionPolicy Bypass -File .\setup_volunteer.ps1</code>
   <p>Or clone and run manually (Windows):</p>
   <code>git clone https://github.com/Matt28296/soft-yeti
 cd soft-yeti
