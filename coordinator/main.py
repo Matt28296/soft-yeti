@@ -164,10 +164,10 @@ code{
   <div class="step"><div class="sn">2</div><div class="st">Mine</div><div class="sd">Your GPU runs real AI tasks</div></div>
   <div class="step"><div class="sn">3</div><div class="st">Earn</div><div class="sd">YETI tokens accumulate in your wallet</div></div>
 </div>
-<a href="/download/setup.ps1" class="dl">⬇&nbsp; Download Setup Script</a>
+<a href="/download/setup.bat" class="dl">⬇&nbsp; Download Setup Script</a>
 <div class="manual">
-  <p><strong>After downloading, don't double-click the file</strong> — Windows will ask you to pick an app instead of running it. Do this instead:</p>
-  <p>Open PowerShell in your Downloads folder (Shift+Right-click the folder → "Open PowerShell window here"), then run:</p>
+  <p>Double-click the downloaded file — it installs itself to a <code style="display:inline;padding:.1rem .4rem">soft-yeti</code> folder in your home directory and walks you through the rest.</p>
+  <p>Prefer PowerShell directly? <a href="/download/setup.ps1" style="color:#7c3aed">Download the .ps1</a> — after downloading, open PowerShell in that folder and run:</p>
   <code>powershell -ExecutionPolicy Bypass -File .\setup_volunteer.ps1</code>
   <p>Or clone and run manually (Windows):</p>
   <code>git clone https://github.com/Matt28296/soft-yeti
@@ -192,6 +192,17 @@ async def download_setup() -> PlainTextResponse:
     return PlainTextResponse(
         content,
         headers={"Content-Disposition": 'attachment; filename="setup_volunteer.ps1"'},
+    )
+
+
+@app.get("/download/setup.bat", response_class=PlainTextResponse)
+async def download_setup_bat() -> PlainTextResponse:
+    """Double-click-friendly bootstrap — .bat executes on double-click, unlike .ps1."""
+    setup_path = Path(__file__).parent.parent / "setup.bat"
+    content = setup_path.read_text(encoding="utf-8") if setup_path.exists() else "@echo off\r\necho Not found\r\npause\r\n"
+    return PlainTextResponse(
+        content,
+        headers={"Content-Disposition": 'attachment; filename="setup.bat"'},
     )
 
 
