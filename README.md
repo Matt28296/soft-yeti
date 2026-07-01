@@ -6,7 +6,11 @@ Volunteers run a lightweight client, donate GPU capacity to an AI task pipeline 
 
 > **Phase 0 validated 2026-06-30** — Block #0 minted on 3060 Ti testbed. 6-second end-to-end: task submitted → Ollama inference → PoI hash accepted → block written → output returned.
 >
-> **Security hardened + Phase 0→1 bridge complete 2026-06-30** — Ed25519 wallet signatures on every submission, `miner_pubkey` + `model_name` recorded in every block, model cross-check in verifier. Block #1 minted via J-Claw YETI pool route (20s, 1.836 YETI, signed submission verified). Canary oracle expanded to 50 tasks. Volunteer ID hijacking fix. Rate limiting on `/api/register` + `/api/submit`. Wallet passphrase encryption. Dual-agent security review applied: reward inflation fix, Ed25519 bypass fix, chain-append lock, timeout memory cleanup, failure-count enforcement. **53/53 tests pass (33 coordinator + 20 chain).**
+> **Security hardened + Phase 0→1 bridge complete 2026-06-30** — Ed25519 wallet signatures on every submission, `miner_pubkey` + `model_name` recorded in every block, model cross-check in verifier. Block #1 minted via J-Claw YETI pool route (20s, 1.836 YETI, signed submission verified). Canary oracle expanded to 50 tasks. Volunteer ID hijacking fix. Rate limiting on `/api/register` + `/api/submit`. Wallet passphrase encryption. Dual-agent security review applied: reward inflation fix, Ed25519 bypass fix, chain-append lock, timeout memory cleanup, failure-count enforcement.
+>
+> **Phase 1 complete 2026-07-01** — Named Cloudflare Tunnel (`soft-yeti.com`), PWA dashboard (`localhost:8901`), canary validated 50/50 on both 7B and 1.5B models. **60/60 tests pass (40 coordinator + 20 chain).**
+>
+> **Phase 1.5 complete 2026-07-01** (commit `8feb6e0`) — Quality gate filters short/looping outputs before hash check. Best-output delivery: coordinator picks the highest-quality nonce-attempt output for J-Claw, not just the hash-winner. Base rate reward adds `total_completion_tokens × 0.0001` YETI to every block. All backward-compatible (old clients unaffected).
 
 ---
 
@@ -220,15 +224,20 @@ Wallets are stored at `~/.soft_yeti/wallet.json`. The setup wizard prompts for a
   "nonce_attempts": 1,
   "prompt_tokens": 42,
   "completion_tokens": 28,
+  "total_completion_tokens": 84,
   "model_name": "qwen2.5-coder:7b-instruct",
   "miner_pubkey": "67743d1315e19619...",
-  "miner_reward": 0.0252,
-  "treasury_reward": 0.0028,
+  "base_reward": 0.000756,
+  "miner_reward": 0.02268,
+  "treasury_reward": 0.00252,
   "timestamp": 1751248800.0,
   "block_hash": "5d9b558449eb1c68...",
   "coordinator_signature": "base64..."
 }
 ```
+
+- `total_completion_tokens` (Phase 1.5): sum of completion tokens across **all** nonce attempts, not just the winning one. Rewards actual inference work done.
+- `base_reward` (Phase 1.5): miner's share of `total_completion_tokens × BASE_RATE`. Added to the nonce-attempt reward, then split 90/10. Old clients that omit `total_completion_tokens` fall back to `completion_tokens × nonce_attempts` (same value when each attempt produces equal tokens).
 
 **Block signing invariant**: `signing_payload()` excludes BOTH `coordinator_signature` AND `block_hash`. `canonical_bytes()` (includes sig, excludes hash) is hashed to produce `block_hash`. Never change this.
 
@@ -241,7 +250,8 @@ Wallets are stored at `~/.soft_yeti/wallet.json`. The setup wizard prompts for a
 | `DIFFICULTY_TARGET` | `"0"` | Leading hex chars required in output hash (empty = always pass) |
 | `GENERATE_TIMEOUT_S` | `900.0` | Seconds J-Claw waits for volunteer (15 min) |
 | `CANARY_RATE` | `0.05` | Fraction of tasks that are canary (fingerprinting) checks |
-| `REWARD_RATE` | `0.001` | YETI per completion token |
+| `REWARD_RATE` | `0.001` | YETI per completion token per nonce attempt (nonce-attempt reward component) |
+| `BASE_RATE` | `0.0001` | YETI per total completion token across ALL nonce attempts (base rate component; Phase 1.5) |
 | `TREASURY_FEE` | `0.1` | Treasury's share of rewards |
 | `CHAIN_ID` | `yeti-testnet` | Chain identifier (prevents replay attacks across networks) |
 
@@ -285,6 +295,38 @@ python -m pytest coordinator/tests/ -v
 | Keygen script hangs | `& $Python - @'...'@` stdin here-string hangs in background PS | Write script to temp `.py` file |
 | `FileNotFoundError: coordinator.key` | `.env` relative path resolved against wrong CWD | Absolute paths in `.env` |
 | Port still in use after kill | `Stop-Process` kills uvicorn parent, not child server | Kill by port ownership: `Get-NetTCPConnection -LocalPort 8900` |
+| Ollama KV-cache corruption | `num_predict:1` warmup call poisons the cache — subsequent similar-prompt calls return EOS (empty `response` field, `done:True`) | Never use `num_predict:1` for warmup; run `ollama stop <model>` to clear the cache before re-testing canary |
+
+### Phase 1.5 implementation notes
+
+**Quality gate (`_passes_quality_gate` in `client/yeti_node.py`)**
+- Runs *before* the SHA-256 hash check — bad outputs never enter the nonce lottery
+- Rejects outputs shorter than 20 characters (truncated / empty inference)
+- Rejects repetition loops: if `output_text[:30]` appears 4 or more times in the full output, the model is stuck in a loop
+- Failed outputs still increment `nonce_attempts` and accumulate to `total_ct` (GPU time was spent and should be counted for base rate reward); they are excluded from `all_outputs` and do not trigger hash computation
+- 20-character threshold is intentional: valid AI inference always produces at least one coherent sentence
+
+**Best-output delivery (`best_output()` in `coordinator/sanitizer.py`)**
+- Client accumulates up to 10 nonce-attempt outputs in `all_outputs` (capped by `_MAX_ALL_OUTPUTS = 10` to prevent bloated submissions on high-attempt tasks)
+- Coordinator calls `best_output(submission.all_outputs, fallback=submission.output_text)` to pick the highest-quality output for J-Claw — not necessarily the hash-winner
+- Scoring: `min(len(text) / 500.0, 1.0)` favors longer outputs (up to 500 chars = full score); repetition-looping outputs get `score × 0.1` penalty. A score of 0.0 means the output would have been rejected by the quality gate anyway.
+- Fallback chain: `all_outputs` empty → returns `fallback`; all candidates score 0 → returns `fallback`; otherwise returns `max(scored, key=score)`
+
+**Base rate reward math**
+```python
+block_gross = completion_tokens * REWARD_RATE * nonce_attempts   # 11 * 0.001 * 3 = 0.033
+base_gross  = total_ct * BASE_RATE                               # 33 * 0.0001  = 0.0033
+gross       = block_gross + base_gross                           # 0.0363
+miner       = gross * (1 - TREASURY_FEE)                        # 0.03267
+treasury    = gross * TREASURY_FEE                               # 0.00363
+```
+`total_ct` is `submission.total_completion_tokens or (completion_tokens * nonce_attempts)`.
+The `or` fallback works correctly because `total_completion_tokens=0` is falsy in Python — old clients that don't send the field get the same number the formula previously used.
+
+**Test fixture gotcha (applies when updating `test_verifier_minter.py`)**
+- `_mined_submission()` uses `SimpleNamespace` — must include all fields `mint_block()` reads, including `total_completion_tokens=0` and `all_outputs=[]`
+- `_settings()` must include `BASE_RATE=0.0001` alongside `REWARD_RATE`
+- Reward assertions: with `nonce_attempts=1, completion_tokens=11, total_completion_tokens=0`: `gross = (11 × 0.001 × 1) + (11 × 0.0001) = 0.0121`; `miner = 0.0121 × 0.9`; `treasury = 0.0121 × 0.1`
 
 ---
 
