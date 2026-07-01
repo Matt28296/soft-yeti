@@ -3,15 +3,17 @@
 from __future__ import annotations
 
 import asyncio
+import io
 import json
 import secrets as _secrets
+import zipfile
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 
 import uvicorn
 from fastapi import Depends, FastAPI, HTTPException, Request, status
-from fastapi.responses import HTMLResponse, PlainTextResponse
+from fastapi.responses import HTMLResponse, PlainTextResponse, Response
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
@@ -421,8 +423,6 @@ code{
 <a href="/download/setup.bat" class="dl">⬇&nbsp; Download Setup Script</a>
 <div class="manual">
   <p>Double-click the downloaded file — it installs itself to a <code style="display:inline;padding:.1rem .4rem">soft-yeti</code> folder in your home directory and walks you through the rest.</p>
-  <p>Prefer PowerShell directly? <a href="/download/setup.ps1" style="color:#7c3aed">Download the .ps1</a> — after downloading, open PowerShell in that folder and run:</p>
-  <code>powershell -ExecutionPolicy Bypass -File .\setup_volunteer.ps1</code>
   <p>Or clone and run manually (Windows):</p>
   <code>git clone https://github.com/Matt28296/soft-yeti
 cd soft-yeti
@@ -462,6 +462,35 @@ async def download_setup_bat() -> PlainTextResponse:
     return PlainTextResponse(
         content,
         headers={"Content-Disposition": 'attachment; filename="setup.bat"'},
+    )
+
+
+_ZIP_EXCLUDE_DIRS = {".venv", "__pycache__", ".pytest_cache"}
+
+
+@app.get("/download/volunteer.zip")
+async def download_volunteer_zip() -> Response:
+    """Self-hosted bundle of setup_volunteer.ps1 + client/ (the repo is private, so
+    testers can't `git clone` or pull GitHub's archive endpoint without credentials).
+    setup.bat downloads and extracts this instead of the lone .ps1 file.
+    """
+    root = Path(__file__).parent.parent
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        setup_ps1 = root / "setup_volunteer.ps1"
+        if setup_ps1.exists():
+            zf.write(setup_ps1, arcname="setup_volunteer.ps1")
+        client_dir = root / "client"
+        for path in client_dir.rglob("*"):
+            if path.is_dir():
+                continue
+            if any(part in _ZIP_EXCLUDE_DIRS for part in path.relative_to(root).parts):
+                continue
+            zf.write(path, arcname=str(path.relative_to(root)))
+    return Response(
+        content=buf.getvalue(),
+        media_type="application/zip",
+        headers={"Content-Disposition": 'attachment; filename="soft-yeti-volunteer.zip"'},
     )
 
 

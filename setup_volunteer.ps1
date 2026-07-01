@@ -82,7 +82,7 @@ if ($DetectedVRAM -eq 0) {
 # -- 4. Pick model from ladder --------------------------------------------------
 # Model ladder (VRAM -> recommended Ollama model):
 #   < 4 GB  : qwen2.5:1.5b-instruct    (1.0 GB) - minimal; limited task quality
-#   4-6 GB  : phi4-mini:3.8b-instruct  (2.5 GB) - good balance for small VRAM
+#   4-6 GB  : phi4-mini                (2.5 GB) - good balance for small VRAM
 #   6-10 GB : qwen2.5-coder:7b-instruct(4.7 GB) - default; best coding quality/size
 #  10-20 GB : deepseek-coder-v2:16b    (8.9 GB) - MoE: 16B params, 2.4B active per pass
 #  20+ GB   : qwen2.5-coder:32b        (19 GB)  - near-frontier quality
@@ -90,7 +90,7 @@ if ($DetectedVRAM -eq 0) {
 if     ($DetectedVRAM -ge 20) { $RecommendedModel = "qwen2.5-coder:32b";         $ModelSize = "19.0 GB" }
 elseif ($DetectedVRAM -ge 10) { $RecommendedModel = "deepseek-coder-v2:16b";     $ModelSize = "8.9 GB"  }
 elseif ($DetectedVRAM -ge 6)  { $RecommendedModel = "qwen2.5-coder:7b-instruct"; $ModelSize = "4.7 GB"  }
-elseif ($DetectedVRAM -ge 4)  { $RecommendedModel = "phi4-mini:3.8b-instruct";   $ModelSize = "2.5 GB"  }
+elseif ($DetectedVRAM -ge 4)  { $RecommendedModel = "phi4-mini";                 $ModelSize = "2.5 GB"  }
 elseif ($DetectedVRAM -gt 0)  { $RecommendedModel = "qwen2.5:1.5b-instruct";     $ModelSize = "1.0 GB"  }
 else                           { $RecommendedModel = "qwen2.5-coder:7b-instruct"; $ModelSize = "4.7 GB"  }
 

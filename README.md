@@ -359,7 +359,7 @@ python client/dashboard.py
 ```
 
 > **Model ladder** (auto-detected by `setup_volunteer.ps1`):
-> `<4 GB` → `qwen2.5:1.5b-instruct` · `4-6 GB` → `phi4-mini:3.8b-instruct` · `6-10 GB` → `qwen2.5-coder:7b-instruct` · `10-20 GB` → `deepseek-coder-v2:16b` · `20+ GB` → `qwen2.5-coder:32b`
+> `<4 GB` → `qwen2.5:1.5b-instruct` · `4-6 GB` → `phi4-mini` · `6-10 GB` → `qwen2.5-coder:7b-instruct` · `10-20 GB` → `deepseek-coder-v2:16b` · `20+ GB` → `qwen2.5-coder:32b`
 > Canary oracle validated 50/50 on both `qwen2.5:1.5b-instruct` and `qwen2.5-coder:7b-instruct`.
 
 ---
