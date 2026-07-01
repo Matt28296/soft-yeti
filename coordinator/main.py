@@ -11,6 +11,7 @@ from typing import Any
 
 import uvicorn
 from fastapi import Depends, FastAPI, HTTPException, Request, status
+from fastapi.responses import HTMLResponse, PlainTextResponse
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
@@ -99,6 +100,95 @@ async def _require_jclaw_auth(request: Request) -> None:
     provided = request.headers.get("X-JClaw-API-Key", "")
     if not _secrets.compare_digest(provided, settings.JCLAW_API_KEY):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid J-Claw API key")
+
+
+_LANDING_HTML = """\
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Soft Yeti — Mine AI, Earn YETI</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{
+  font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+  background:#0a0a0f;color:#e8e8f0;
+  min-height:100vh;display:flex;flex-direction:column;
+  align-items:center;justify-content:center;padding:2rem;
+  text-align:center;
+}
+.hex{font-size:3.5rem;margin-bottom:.5rem;line-height:1}
+h1{
+  font-size:2.75rem;font-weight:800;letter-spacing:-.04em;
+  background:linear-gradient(135deg,#a78bfa,#60a5fa);
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;
+  margin-bottom:.6rem;
+}
+.tag{font-size:1.2rem;color:#6060a0;margin-bottom:3rem;line-height:1.5}
+.steps{display:flex;gap:1.25rem;margin-bottom:3rem;flex-wrap:wrap;justify-content:center}
+.step{
+  background:#12121c;border:1px solid #2a2a3e;border-radius:14px;
+  padding:1.5rem 1.25rem;width:180px;text-align:center;
+}
+.sn{font-size:1.75rem;font-weight:700;color:#7c3aed;margin-bottom:.4rem}
+.st{font-weight:600;font-size:.95rem;color:#d0d0e8;margin-bottom:.25rem}
+.sd{font-size:.8rem;color:#5050a0;line-height:1.4}
+.dl{
+  display:inline-flex;align-items:center;gap:.6rem;
+  background:linear-gradient(135deg,#7c3aed,#4f46e5);
+  color:#fff;text-decoration:none;
+  padding:.9rem 2.25rem;border-radius:12px;
+  font-size:1.05rem;font-weight:600;
+  margin-bottom:1rem;transition:opacity .2s;
+}
+.dl:hover{opacity:.88}
+.manual{font-size:.85rem;color:#4a4a7a;margin-top:.5rem}
+code{
+  display:block;background:#12121c;border:1px solid #2a2a3e;
+  border-radius:8px;padding:.8rem 1rem;margin:.6rem auto 0;
+  font-size:.78rem;color:#8080b0;text-align:left;
+  max-width:480px;white-space:pre;overflow-x:auto;
+}
+.gh{margin-top:2.5rem;font-size:.82rem;color:#404060}
+.gh a{color:#7c3aed;text-decoration:none}
+</style>
+</head>
+<body>
+<div class="hex">⬡</div>
+<h1>Soft Yeti</h1>
+<p class="tag">Donate spare GPU compute to AI inference.<br>Earn YETI tokens automatically.</p>
+<div class="steps">
+  <div class="step"><div class="sn">1</div><div class="st">Download</div><div class="sd">One script sets everything up</div></div>
+  <div class="step"><div class="sn">2</div><div class="st">Mine</div><div class="sd">Your GPU runs real AI tasks</div></div>
+  <div class="step"><div class="sn">3</div><div class="st">Earn</div><div class="sd">YETI tokens accumulate in your wallet</div></div>
+</div>
+<a href="/download/setup.ps1" class="dl">⬇&nbsp; Download Setup Script</a>
+<div class="manual">
+  <p>Or clone and run manually (Windows):</p>
+  <code>git clone https://github.com/Matt28296/soft-yeti
+cd soft-yeti
+powershell -ExecutionPolicy Bypass -File setup_volunteer.ps1</code>
+</div>
+<div class="gh">Open source on <a href="https://github.com/Matt28296/soft-yeti" target="_blank">GitHub</a></div>
+</body>
+</html>
+"""
+
+
+@app.get("/", response_class=HTMLResponse)
+async def landing() -> HTMLResponse:
+    return HTMLResponse(_LANDING_HTML)
+
+
+@app.get("/download/setup.ps1", response_class=PlainTextResponse)
+async def download_setup() -> PlainTextResponse:
+    setup_path = Path(__file__).parent.parent / "setup_volunteer.ps1"
+    content = setup_path.read_text(encoding="utf-8") if setup_path.exists() else "# Not found"
+    return PlainTextResponse(
+        content,
+        headers={"Content-Disposition": 'attachment; filename="setup_volunteer.ps1"'},
+    )
 
 
 @app.get("/api/health")

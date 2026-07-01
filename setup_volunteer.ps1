@@ -163,9 +163,30 @@ Write-Host ""
 Write-Host "GPU:   $DetectedGPU ($DetectedVRAM GB VRAM)"
 Write-Host "Model: $ModelName ($ModelSize)"
 Write-Host ""
-Write-Host "To start mining, run:"
-Write-Host "  cd client"
-Write-Host "  .venv\Scripts\python yeti_client.py"
+
+# ── 9. Start dashboard ────────────────────────────────────────────────────────
+Write-Host "[setup] Starting Soft Yeti dashboard at http://localhost:8901 ..."
+$DashScript = Join-Path $ClientDir "dashboard.py"
+Start-Process -FilePath $Python -ArgumentList $DashScript -WindowStyle Minimized
+
+# ── 10. Create desktop shortcut ───────────────────────────────────────────────
+try {
+    $DesktopUrl = Join-Path ([Environment]::GetFolderPath("Desktop")) "Soft Yeti.url"
+    $ShortcutContent = "[InternetShortcut]`r`nURL=http://localhost:8901`r`nIconIndex=0"
+    Set-Content -Path $DesktopUrl -Value $ShortcutContent -Encoding UTF8
+    Write-Host "[ok] Desktop shortcut created: Soft Yeti.url"
+} catch {
+    Write-Host "[warning] Could not create desktop shortcut: $_" -ForegroundColor Yellow
+}
+
+# ── 11. Open dashboard in browser ─────────────────────────────────────────────
+Write-Host "[setup] Opening dashboard in browser..."
+Start-Sleep -Seconds 3
+Start-Process "http://localhost:8901"
+
+Write-Host ""
+Write-Host "Your dashboard is running at http://localhost:8901" -ForegroundColor Cyan
+Write-Host "Use the toggle on the card to start and stop mining." -ForegroundColor Cyan
 Write-Host ""
 Write-Host "Note: if the coordinator restarts, re-run setup to get a new API key"
 Write-Host "      (your wallet and volunteer ID are preserved)."
