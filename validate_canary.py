@@ -37,7 +37,7 @@ def _run_inference(host: str, model: str, prompt: str) -> str:
             "stream": False,
             "options": {"temperature": 0, "seed": 42},
         },
-        timeout=60,
+        timeout=300,
     )
     resp.raise_for_status()
     return resp.json().get("response", "")

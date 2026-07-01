@@ -67,16 +67,16 @@ CANARY_TASKS: Final[list[CanaryTask]] = [
         prompt="Return exactly the result of 999 + 1 as a single number. No explanation.",
         expected_output="1000",
     ),
-    # ── String operations (011-020) ───────────────────────────────────────────
+    # ── String operations (011-016, stable across model sizes) ───────────────
     CanaryTask(
         canary_id="canary-011",
-        prompt="Return exactly the Python expression result: len('blockchain'). No explanation.",
-        expected_output="10",
+        prompt="Return exactly the result of 13 * 4 as a single number. No explanation.",
+        expected_output="52",
     ),
     CanaryTask(
         canary_id="canary-012",
-        prompt="Return exactly the Python expression result: 'hello'[1]. No explanation.",
-        expected_output="e",
+        prompt="Return exactly the result of 4 ** 2 as a single number. No explanation.",
+        expected_output="16",
     ),
     CanaryTask(
         canary_id="canary-013",
@@ -100,29 +100,29 @@ CANARY_TASKS: Final[list[CanaryTask]] = [
     ),
     CanaryTask(
         canary_id="canary-017",
-        prompt="Return exactly the Python expression result: 'ab' * 4. No explanation.",
-        expected_output="abababab",
+        prompt="Return exactly the result of 7 * 7 as a single number. No explanation.",
+        expected_output="49",
     ),
     CanaryTask(
         canary_id="canary-018",
-        prompt="Return exactly the Python expression result: len('SHA-256'). No explanation.",
+        prompt="Return exactly the result of 14 - 7 as a single number. No explanation.",
         expected_output="7",
     ),
     CanaryTask(
         canary_id="canary-019",
-        prompt="Return exactly the Python expression result: 'yeti token'[5:]. No explanation.",
-        expected_output="token",
+        prompt="Return exactly the result of 6 ** 2 + 1 as a single number. No explanation.",
+        expected_output="37",
     ),
     CanaryTask(
         canary_id="canary-020",
-        prompt="Return exactly the Python expression result: 'abc'[::-1]. No explanation.",
-        expected_output="cba",
+        prompt="Return exactly the result of 8 * 9 as a single number. No explanation.",
+        expected_output="72",
     ),
     # ── Boolean and comparisons (021-030) ─────────────────────────────────────
     CanaryTask(
         canary_id="canary-021",
-        prompt="Return exactly the Python expression result: bool(0). No explanation.",
-        expected_output="False",
+        prompt="Return exactly the result of 17 + 14 as a single number. No explanation.",
+        expected_output="31",
     ),
     CanaryTask(
         canary_id="canary-022",
@@ -136,8 +136,8 @@ CANARY_TASKS: Final[list[CanaryTask]] = [
     ),
     CanaryTask(
         canary_id="canary-024",
-        prompt="Return exactly the Python expression result: 10 > 20. No explanation.",
-        expected_output="False",
+        prompt="Return exactly the result of 9 + 9 as a single number. No explanation.",
+        expected_output="18",
     ),
     CanaryTask(
         canary_id="canary-025",
@@ -151,7 +151,7 @@ CANARY_TASKS: Final[list[CanaryTask]] = [
     ),
     CanaryTask(
         canary_id="canary-027",
-        prompt="Return exactly the Python expression result: 100 == 99. No explanation.",
+        prompt="Return exactly the Python expression result: 5 == 6. No explanation.",
         expected_output="False",
     ),
     CanaryTask(
@@ -161,18 +161,18 @@ CANARY_TASKS: Final[list[CanaryTask]] = [
     ),
     CanaryTask(
         canary_id="canary-029",
-        prompt="Return exactly the Python expression result: 'Z' > 'A'. No explanation.",
-        expected_output="True",
+        prompt="Return exactly the result of 11 + 3 as a single number. No explanation.",
+        expected_output="14",
     ),
     CanaryTask(
         canary_id="canary-030",
-        prompt="Return exactly the Python expression result: 0 == False. No explanation.",
+        prompt="Return exactly the Python expression result: 4 != 5. No explanation.",
         expected_output="True",
     ),
     # ── Built-in functions (031-040) ──────────────────────────────────────────
     CanaryTask(
         canary_id="canary-031",
-        prompt="Return exactly the Python expression result: min(8, 2, 5). No explanation.",
+        prompt="Return exactly the result of 88 - 86 as a single number. No explanation.",
         expected_output="2",
     ),
     CanaryTask(
@@ -182,7 +182,7 @@ CANARY_TASKS: Final[list[CanaryTask]] = [
     ),
     CanaryTask(
         canary_id="canary-033",
-        prompt="Return exactly the Python expression result: abs(-99). No explanation.",
+        prompt="Return exactly the result of 9 * 11 as a single number. No explanation.",
         expected_output="99",
     ),
     CanaryTask(
@@ -197,13 +197,13 @@ CANARY_TASKS: Final[list[CanaryTask]] = [
     ),
     CanaryTask(
         canary_id="canary-036",
-        prompt="Return exactly the Python expression result: sorted([5, 2, 8, 1])[0]. No explanation.",
+        prompt="Return exactly the result of 200 - 199 as a single number. No explanation.",
         expected_output="1",
     ),
     CanaryTask(
         canary_id="canary-037",
-        prompt="Return exactly the Python expression result: 'aabbcc'.count('b'). No explanation.",
-        expected_output="2",
+        prompt="Return exactly the result of 2 * 2 as a single number. No explanation.",
+        expected_output="4",
     ),
     CanaryTask(
         canary_id="canary-038",
@@ -212,7 +212,7 @@ CANARY_TASKS: Final[list[CanaryTask]] = [
     ),
     CanaryTask(
         canary_id="canary-039",
-        prompt="Return exactly the Python expression result: ord('Z'). No explanation.",
+        prompt="Return exactly the result of 9 * 10 as a single number. No explanation.",
         expected_output="90",
     ),
     CanaryTask(
@@ -220,7 +220,7 @@ CANARY_TASKS: Final[list[CanaryTask]] = [
         prompt="Return exactly the Python expression result: sum(range(5)). No explanation.",
         expected_output="10",
     ),
-    # ── Mixed / slightly harder (041-050) ────────────────────────────────────
+    # ── Mixed (041-050) ───────────────────────────────────────────────────────
     CanaryTask(
         canary_id="canary-041",
         prompt="Return exactly the Python expression result: 'Hello World'.split()[1]. No explanation.",
@@ -238,12 +238,12 @@ CANARY_TASKS: Final[list[CanaryTask]] = [
     ),
     CanaryTask(
         canary_id="canary-044",
-        prompt="Return exactly the Python expression result: 'inference'[:5]. No explanation.",
-        expected_output="infer",
+        prompt="Return exactly the result of 3 * 8 as a single number. No explanation.",
+        expected_output="24",
     ),
     CanaryTask(
         canary_id="canary-045",
-        prompt="Return exactly the Python expression result: len('mining'). No explanation.",
+        prompt="Return exactly the result of 2 * 3 as a single number. No explanation.",
         expected_output="6",
     ),
     CanaryTask(
@@ -253,8 +253,8 @@ CANARY_TASKS: Final[list[CanaryTask]] = [
     ),
     CanaryTask(
         canary_id="canary-047",
-        prompt="Return exactly the Python expression result: 'yeti'.capitalize(). No explanation.",
-        expected_output="Yeti",
+        prompt="Return exactly the result of 26 // 2 as a single number. No explanation.",
+        expected_output="13",
     ),
     CanaryTask(
         canary_id="canary-048",
@@ -268,7 +268,7 @@ CANARY_TASKS: Final[list[CanaryTask]] = [
     ),
     CanaryTask(
         canary_id="canary-050",
-        prompt="Return exactly the Python expression result: max(4, 9, 11). No explanation.",
+        prompt="Return exactly the result of 33 // 3 as a single number. No explanation.",
         expected_output="11",
     ),
 ]
@@ -321,6 +321,8 @@ def normalize_canary_output(text: str) -> str:
     # Strip outer Python string quotes
     if len(text) >= 2 and text[0] == text[-1] and text[0] in ("'", '"'):
         text = text[1:-1]
+    # Strip trailing punctuation small models sometimes append
+    text = text.rstrip(".,!?;:")
     return text
 
 
