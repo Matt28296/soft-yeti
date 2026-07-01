@@ -247,29 +247,30 @@ YETI_TASK_TIMEOUT_S: int = 300
   - Base rate per inference run — `per_attempt_reward = completion_tokens × 0.0001` credited to miner regardless of whether their attempt wins the block. Makes raising difficulty economically viable.
 - ⏭ **Phase 2 — Hardening + Protocol foundation**:
   - Argon2 memory-hard PoW (Theory 2) — 256MB RAM per attempt; CPU/cloud scripts without VRAM can't forge this
-  - Vulkan/PyOpenCL GPU benchmark — replace numpy stub with real GPU timing proof
+  - Vulkan/PyOpenCL GPU benchmark — replace numpy stub with real GPU timing proof; **design backend-agnostic benchmark interface (Metal/Vulkan/CUDA) now** — avoids Phase 3 rewrite when mobile tier lands
   - True model fingerprinting — per-model expected-output calibration (replace name-match-only); first 10 tasks after registration are model-specific canary checks
   - **Proof of Inference Depth (PoID)** — alternative to hash lottery: miner runs N sequential self-refinement passes (`Pass_N = LLM("Improve: " + output_N-1)`), each chained via `hash(prev_output)` in the salt so passes can't be faked; all N outputs delivered; reward proportional to depth. No wasted inference. Introduced alongside hash-target mode for A/B test; default in Phase 3 if quality validates.
-  - On-chain model registry — model ID (weights hash/Ollama digest), reputation score updated per task, family + parameter count recorded; high-reputation models earn 5% reward bonus
+  - **On-chain model registry** — model ID (weights hash/Ollama digest), reputation score updated per task, family + parameter count recorded; high-reputation models earn 5% reward bonus. **Include `model_type` field (`standard` | `bitnet`) and `inference_backend` field (`ollama` | `metal` | `vulkan`) from day one** — mobile volunteers in Phase 3 need a distinct registry tier; retrofitting is painful.
   - Difficulty auto-adjustment — dynamic target based on block rate
   - ✅ `asyncio.Lock` per wallet in `subscription.py` — already implemented (Codex round 2)
   - Subscription economy live — on-chain YETI Transfer → access grants
   - Encrypted API key storage in client config (`~/.soft_yeti/config.json`)
   - ✅ Exponential backoff on client reconnect — `_backoff_delay(fail_count)` in `yeti_node.py` (5s→10s→20s…→120s cap, resets on success)
   - PyInstaller `SoftYetiSetup.exe` — one-click Windows installer
-- ⏭ **Phase 3 — Quality + Decentralization**: HARD GATE — legal review (FinCEN MSB registration, KYC/AML compliance, Howey test analysis) FIRST. No exceptions.
+- ⏭ **Phase 3 — Quality + Decentralization**: HARD GATE — legal review (FinCEN MSB registration, KYC/AML compliance, Howey test analysis, **App Store mining policy**) FIRST. No exceptions.
   - BFT multi-validator consensus — threshold signatures (5-of-9 validators, staked YETI, slashing for fraud); block finality is deterministic not probabilistic; coordinator becomes first validator
   - Reference model judge — tiny fixed-weight model (hash pinned in protocol) scores every output at temperature=0; all nodes independently produce identical scores; no coordination needed
   - Peer quality committee — 10% of tasks selected for 5-miner committee review; commit-reveal scheme prevents herding; median score wins; outliers lose stake fraction
-  - Bayesian miner reputation — `Beta(α,β)` per miner updated by quality scores; reward multiplier = `f(expected_quality, confidence)`; new miners earn at ~0.7× (low confidence prior)
+  - Bayesian miner reputation — `Beta(α,β)` per miner updated by quality scores; reward multiplier = `f(expected_quality, confidence)`; new miners earn at ~0.7× (low confidence prior); **Bayesian churn tolerance is essential for mobile volunteers** (screen lock = frequent disconnect; reputation must not crater on offline gaps)
   - Model diversity enforcement — each block requires ≥3 distinct model families; BFT at model layer; single-model compromise can't dominate >⅓ of any block
   - Elastic emission + EIP-1559 fee burn — emission tied to network utilization; 30% of task fees burned; deflationary at high utilization
   - DHT task queue — decentralized task routing; any node can post tasks; eliminates coordinator as single routing point
   - Judge model governance — on-chain vote (supermajority, 30-day transition) required to update reference judge weights; most politically critical control point in the protocol
+  - **Mobile volunteer tier (iOS + Android)** — foreground-only mining via BitNet models (Microsoft 1.58-bit ternary weights) + QVAC Fabric (Metal on iOS, Vulkan on Android); iPhone 16 Pro Max A18 Pro confirmed capable of 7B–13B BitNet inference; no Ollama dependency. Requirements: (a) select a BitNet coding model (wait for BitNet `qwen2.5-coder` variant or use best available), (b) validate new per-model canary oracle against that model on iPhone hardware at temperature=0, (c) build Swift iOS app embedding QVAC Fabric — replicates Python mining loop foreground-only, (d) TestFlight distribution to testers. **Coordinator change:** add `inference_backend=metal` routing pool; mobile tasks get own difficulty target calibrated for A18 inference speed (~5–15s/attempt).
 - ⏭ **Phase 4 — zkML + Full permissionless**:
-  - zkML verification — ZK proof that specific model weights performed specific inference on specific input; verifying cheap, forging impossible; retires canary oracle, GPU benchmark, model fingerprinting (replaced by proof)
+  - zkML verification — ZK proof that specific model weights performed specific inference on specific input; verifying cheap, forging impossible; retires canary oracle, GPU benchmark, model fingerprinting (replaced by proof). **BitNet's ternary weight math (weights ∈ {-1,0,1}) makes zkML circuit construction significantly cheaper than FP16 — mobile miners may be the first tier where zkML is practical**
   - Recursive task DAGs — tasks declare input dependencies; blockchain verifies DAG integrity via output hashes; cryptographically immutable reasoning chains usable for regulated-industry audit trails
-  - Proof of Inference Diversity (PoDiv) — M miners from different model families independently process same task; meta-model aggregates; miners earn proportionally to how much their output contributed to ensemble consensus
+  - **Proof of Inference Diversity (PoDiv)** — M miners from different model families independently process same task; meta-model aggregates; miners earn proportionally to how much their output contributed to ensemble consensus. **Mobile BitNet volunteers are first-class PoDiv participants** — BitNet's different weight distribution and quantization produce meaningfully different outputs from GGUF models on the same prompt, which is exactly the diversity PoDiv rewards. Mobile miners earn a premium for being architecturally distinct, not competing head-to-head with desktop GPUs.
   - Permissionless validators — open validator entry (stake + 30-day probation + <5% concentration cap); stake concentration enforced on-chain
 - ⏭ **Phase 5 — Network effects + Enterprise**:
   - On-chain computation lineage product — enterprise API for cryptographic provenance of any output (model identity, quality score, full input, timestamp, DAG); no competitor offers immutable AI reasoning audit trails
