@@ -135,6 +135,46 @@ soft-yeti/
 
 ---
 
+## Node architecture & governance
+
+### Current node roles (Phase 0–1)
+
+| Node | Machine | Role | Status |
+|---|---|---|---|
+| **Core node** | 9070 XT | Primary coordinator — mints blocks, holds chain JSONL, signs all submissions | Always-on |
+| **Secondary node** | 3060 Ti | Hot-standby coordinator + volunteer miner — continues chain if core goes down | Standby; active as miner |
+
+The **core node** is the single authoritative coordinator for now. The secondary node:
+- Runs the volunteer client (`yeti_client.py`) full-time as a miner
+- Can take over as coordinator if the core goes down: `.\start_coordinator_secondary.ps1` copies the synced chain + key and starts uvicorn on `:8900`
+- J-Claw routes YETI tasks to the secondary automatically via `YETI_COORDINATOR_FALLBACK_URL` (health probe tries primary first, falls back transparently)
+
+**Never run both coordinators simultaneously** — no consensus mechanism exists yet to merge diverging chains. Start the secondary only after confirming the core is truly down.
+
+**Chain sync (required for failover):** Syncthing must sync these three files from the 9070 XT to the 3060 Ti continuously:
+- `coordinator/coordinator.key` — same signing key so secondary-minted blocks are valid
+- `coordinator/coordinator.pub`
+- `coordinator/yeti-chain.jsonl` — current chain state
+
+### Governance rule — majority vote for core changes
+
+> **Any change that affects the network's core rules requires agreement from more than 50% of active nodes.**
+
+"Core changes" include:
+- Adding a new node to the coordinator/validator set
+- Removing or replacing a node
+- Changing `CHAIN_ID`, `REWARD_RATE`, `TREASURY_FEE`, `BASE_RATE`, or `DIFFICULTY_TARGET` at the protocol level
+- Upgrading coordinator code in a way that changes block format or consensus rules
+- Rotating the coordinator signing key
+
+**Current threshold (2 nodes — 9070 XT + 3060 Ti):** both nodes must agree (1 of 2 = 50%, which does not meet the *greater than* 50% bar — you need 2 of 2).
+
+**As nodes grow:** 3 nodes → 2 of 3; 5 nodes → 3 of 5; 9 nodes → 5 of 9 (aligns with Phase 3 BFT threshold).
+
+**Until Phase 3 BFT is implemented:** governance votes are manual — both operators explicitly confirm in writing (GitHub commit, message, etc.) before any core change is applied. Phase 3 codifies this as on-chain threshold signature voting with 30-day transition windows.
+
+---
+
 ## Key invariants (must preserve across all phases)
 
 - **Block signing:** `signing_payload()` excludes BOTH `coordinator_signature` AND `block_hash`.
