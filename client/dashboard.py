@@ -56,7 +56,7 @@ def _get_balance(coordinator_url: str, wallet: str) -> float:
             timeout=5,
         )
         if r.ok:
-            return float(r.json().get("balance", 0.0))
+            return float(r.json().get("balance_yeti", 0.0))
     except Exception:
         pass
     return 0.0
@@ -109,7 +109,7 @@ def _status_data() -> dict:
         wpath = Path(cfg.wallet_path)
         if wpath.exists():
             raw = json.loads(wpath.read_text(encoding="utf-8"))
-            wallet = raw.get("address", "")
+            wallet = raw.get("data", {}).get("address", "")
     except Exception:
         pass
     balance = _get_balance(cfg.coordinator_url, wallet) if wallet else 0.0
