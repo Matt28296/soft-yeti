@@ -18,6 +18,7 @@ import time
 import logging
 from pathlib import Path
 
+import psutil
 import requests
 
 # ── Config ────────────────────────────────────────────────────────────────────
@@ -72,6 +73,14 @@ def restore_env():
         log.info("Restored coordinator/.env from .env.primary.bak")
 
 
+def find_listener_pid(port=8900):
+    """Return the PID of the process listening on the given port, or None."""
+    for conn in psutil.net_connections(kind="tcp"):
+        if conn.laddr.port == port and conn.status == psutil.CONN_LISTEN:
+            return conn.pid
+    return None
+
+
 def start_secondary():
     log.info("ACTIVATING secondary coordinator")
     proc = subprocess.Popen(
@@ -83,20 +92,29 @@ def start_secondary():
 
 
 def stop_secondary(proc):
-    if proc.poll() is not None:
-        log.info("Secondary already exited (code %s)", proc.returncode)
-        restore_env()
-        return
-    log.info("DEACTIVATING secondary coordinator (PID %d)", proc.pid)
-    proc.terminate()
-    try:
-        proc.wait(timeout=15)
-        log.info("Secondary exited cleanly.")
-    except subprocess.TimeoutExpired:
-        log.warning("Secondary didn't exit in 15s -- killing.")
-        proc.kill()
-        proc.wait()
+    log.info("DEACTIVATING secondary coordinator")
+    # Kill the actual port listener (uvicorn worker) — proc.terminate() only kills
+    # the PowerShell wrapper and leaves the uvicorn child bound to :8900.
+    pid = find_listener_pid()
+    if pid:
+        try:
+            psutil.Process(pid).kill()
+            log.info("Killed :8900 listener PID %d", pid)
+        except psutil.NoSuchProcess:
+            pass
+    # Also clean up the wrapper process
+    if proc.poll() is None:
+        proc.terminate()
+        try:
+            proc.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            proc.wait()
     restore_env()
+    # Verify the port is actually free
+    time.sleep(1)
+    if find_listener_pid() is not None:
+        log.error("Port 8900 still held after stop_secondary() -- manual check needed!")
 
 
 def main():
@@ -113,10 +131,17 @@ def main():
 
     try:
         while True:
-            # Detect secondary that crashed on its own
+            # Detect secondary wrapper that exited on its own
             if secondary is not None and secondary.poll() is not None:
-                log.warning("Secondary exited unexpectedly (code %s) -- cleared.",
+                log.warning("Secondary wrapper exited unexpectedly (code %s) -- clearing.",
                             secondary.returncode)
+                pid = find_listener_pid()
+                if pid:
+                    try:
+                        psutil.Process(pid).kill()
+                        log.warning("Killed orphaned :8900 listener PID %d", pid)
+                    except psutil.NoSuchProcess:
+                        pass
                 restore_env()
                 secondary = None
 
