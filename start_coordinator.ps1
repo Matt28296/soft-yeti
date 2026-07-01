@@ -1,4 +1,4 @@
-# Soft Yeti coordinator startup script — Phase 0 testbed
+# Soft Yeti coordinator startup script - Phase 0 testbed
 # Run from: soft-yeti/   (this directory)
 # Coordinator package lives in: soft-yeti/coordinator/ (run uvicorn from soft-yeti/ so Python finds it)
 
@@ -9,22 +9,22 @@ $Venv    = Join-Path $Root ".venv"
 $Python  = Join-Path $Venv "Scripts\python.exe"
 $Pip     = Join-Path $Venv "Scripts\pip.exe"
 
-# ── 1. Venv ──────────────────────────────────────────────────────────────────
+# -- 1. Venv ------------------------------------------------------------------
 if (-not (Test-Path $Python)) {
     Write-Host "[setup] Creating .venv..."
     python -m venv $Venv
 }
 
-# ── 2. Install coordinator requirements ──────────────────────────────────────
+# -- 2. Install coordinator requirements --------------------------------------
 $Req = Join-Path $CoordDir "requirements.txt"
 if (Test-Path $Req) {
     Write-Host "[setup] Installing coordinator requirements..."
     & $Pip install -r $Req --quiet
 } else {
-    Write-Warning "requirements.txt not found at $Req — skipping pip install"
+    Write-Warning "requirements.txt not found at $Req - skipping pip install"
 }
 
-# ── 3. Generate Ed25519 keypair (PEM, no passphrase — Phase 0 testbed) ───────
+# -- 3. Generate Ed25519 keypair (PEM, no passphrase - Phase 0 testbed) -------
 $KeyPath = Join-Path $CoordDir "coordinator.key"
 $PubPath = Join-Path $CoordDir "coordinator.pub"
 
@@ -56,10 +56,10 @@ print(f"  coordinator.pub -> {pub_path}")
     Remove-Item $keygenScript -Force -ErrorAction SilentlyContinue
     Write-Host "[setup] Keypair written."
 } else {
-    Write-Host "[setup] Keypair already exists — skipping."
+    Write-Host "[setup] Keypair already exists - skipping."
 }
 
-# ── 4. Generate treasury wallet (YETI1... address) ───────────────────────────
+# -- 4. Generate treasury wallet (YETI1... address) ---------------------------
 $TreasuryFile = Join-Path $CoordDir "treasury_wallet.json"
 
 if (-not (Test-Path $TreasuryFile)) {
@@ -85,14 +85,14 @@ print(w["address"])
     Write-Host "[setup] Treasury wallet already exists: $TreasuryAddr"
 }
 
-# ── 5. Write .env (Phase 0 defaults — edit to tune) ──────────────────────────
+# -- 5. Write .env (Phase 0 defaults - edit to tune) --------------------------
 $EnvFile = Join-Path $CoordDir ".env"
 
 if (-not (Test-Path $EnvFile)) {
     Write-Host "[setup] Writing .env with Phase 0 defaults..."
-    # Use absolute paths — pydantic-settings resolves relative paths against CWD, not the package dir
+    # Use absolute paths - pydantic-settings resolves relative paths against CWD, not the package dir
     $envContent = @"
-# Soft Yeti Coordinator — Phase 0 testbed
+# Soft Yeti Coordinator - Phase 0 testbed
 COORDINATOR_ED25519_KEY_PATH=$CoordDir\coordinator.key
 COORDINATOR_ED25519_PUBLIC_KEY_PATH=$CoordDir\coordinator.pub
 COORDINATOR_ED25519_KEY_PASS=
@@ -115,10 +115,10 @@ CANARY_RATE=0.05
 
     Write-Host "[setup] .env written."
 } else {
-    Write-Host "[setup] .env already exists — skipping."
+    Write-Host "[setup] .env already exists - skipping."
 }
 
-# ── 6. Start coordinator ──────────────────────────────────────────────────────
+# -- 6. Start coordinator ------------------------------------------------------
 Write-Host ""
 Write-Host "Starting Soft Yeti coordinator on http://0.0.0.0:8900 ..."
 Write-Host "  Chain ID   : yeti-testnet"

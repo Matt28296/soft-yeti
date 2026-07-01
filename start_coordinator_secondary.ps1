@@ -1,4 +1,4 @@
-# Soft Yeti coordinator — SECONDARY node (3060 Ti)
+# Soft Yeti coordinator - SECONDARY node (3060 Ti)
 # Run this on the 3060 Ti when the primary (9070 XT) coordinator is down.
 # Requires: synced coordinator.key + yeti-chain.jsonl from the primary via Syncthing.
 #
@@ -16,7 +16,7 @@
 #   api.soft-yeti.com -> http://localhost:8900
 # OR use the Tailscale IP of this machine in J-Claw's YETI_COORDINATOR_FALLBACK_URL.
 #
-# IMPORTANT: Do NOT run the secondary while the primary is healthy — split-brain will
+# IMPORTANT: Do NOT run the secondary while the primary is healthy - split-brain will
 # corrupt the chain if both coordinators accept blocks simultaneously.
 
 param(
@@ -34,7 +34,7 @@ Write-Host ""
 Write-Host "=== Soft Yeti SECONDARY coordinator (3060 Ti failover) ==="
 Write-Host ""
 
-# ── 0. Locate synced key and chain from primary ───────────────────────────────
+# -- 0. Locate synced key and chain from primary -------------------------------
 # Prefer synced copies in SyncDir; fall back to coordinator/ (if already present)
 $KeySrc   = if (Test-Path "$SyncDir\coordinator.key") { "$SyncDir\coordinator.key" }
             elseif (Test-Path "$CoordDir\coordinator.key") { "$CoordDir\coordinator.key" }
@@ -59,10 +59,10 @@ Write-Host "[key]   $KeySrc"
 if ($ChainSrc) {
     Write-Host "[chain] $ChainSrc"
 } else {
-    Write-Host "[chain] No synced chain found — starting fresh (will re-sync on primary restart)"
+    Write-Host "[chain] No synced chain found - starting fresh (will re-sync on primary restart)"
 }
 
-# ── 1. Copy synced files into coordinator/ (coordinator reads from $CoordDir) ──
+# -- 1. Copy synced files into coordinator/ (coordinator reads from $CoordDir) --
 $KeyDst   = Join-Path $CoordDir "coordinator.key"
 $PubDst   = Join-Path $CoordDir "coordinator.pub"
 $ChainDst = Join-Path $CoordDir "yeti-chain.jsonl"
@@ -75,20 +75,20 @@ if ($ChainSrc -and $ChainSrc -ne $ChainDst) {
     Write-Host "[copied] yeti-chain.jsonl ($lineCount blocks)"
 }
 
-# ── 2. Venv ───────────────────────────────────────────────────────────────────
+# -- 2. Venv -------------------------------------------------------------------
 if (-not (Test-Path $Python)) {
     Write-Host "[setup] Creating .venv..."
     python -m venv $Venv
 }
 
-# ── 3. Install requirements ───────────────────────────────────────────────────
+# -- 3. Install requirements ---------------------------------------------------
 $Req = Join-Path $CoordDir "requirements.txt"
 if (Test-Path $Req) {
     Write-Host "[setup] Installing coordinator requirements..."
     & $Pip install -r $Req --quiet
 }
 
-# ── 4. Write .env if absent (inherits primary's CHAIN_ID + key paths) ─────────
+# -- 4. Write .env if absent (inherits primary's CHAIN_ID + key paths) ---------
 $EnvFile = Join-Path $CoordDir ".env.secondary"
 $EnvLink = Join-Path $CoordDir ".env"
 
@@ -101,7 +101,7 @@ if (Test-Path $TreasuryFile) {
 if (-not (Test-Path $EnvFile)) {
     Write-Host "[setup] Writing .env.secondary..."
     @"
-# Soft Yeti Coordinator — SECONDARY (3060 Ti failover)
+# Soft Yeti Coordinator - SECONDARY (3060 Ti failover)
 # Uses the SAME coordinator.key + CHAIN_ID as the primary to produce valid signed blocks.
 COORDINATOR_ED25519_KEY_PATH=$CoordDir\coordinator.key
 COORDINATOR_ED25519_PUBLIC_KEY_PATH=$CoordDir\coordinator.pub
@@ -133,7 +133,7 @@ if ((Test-Path $PrimaryEnv) -and -not (Test-Path $PrimaryEnvBak)) {
 Copy-Item $EnvFile $PrimaryEnv -Force
 Write-Host "[env]   Using secondary .env"
 
-# ── 5. Start secondary coordinator ────────────────────────────────────────────
+# -- 5. Start secondary coordinator --------------------------------------------
 Write-Host ""
 Write-Host "Starting SECONDARY coordinator on http://0.0.0.0:8900 ..."
 Write-Host "  This machine's Tailscale IP: $(try { (Get-NetIPAddress -InterfaceAlias *tailscale* -AddressFamily IPv4 -ErrorAction Stop).IPAddress } catch { 'unknown' })"
