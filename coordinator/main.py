@@ -138,7 +138,7 @@ tr:hover td{background:#14141f}
 .kv{display:grid;grid-template-columns:190px 1fr;gap:0}
 .kv-k{padding:.6rem 1rem;color:#404070;font-size:.78rem;font-weight:700;border-bottom:1px solid #13131f;background:#0f0f1a;white-space:nowrap}
 .kv-v{padding:.6rem 1rem;font-family:monospace;font-size:.78rem;border-bottom:1px solid #13131f;word-break:break-all}
-.kv-k:last-of-type,.kv-v:last-of-type{border-bottom:none}
+.kv>div:last-child,.kv>div:nth-last-child(2){border-bottom:none}
 .nav-row{display:flex;gap:.6rem;margin-bottom:1rem;align-items:center;flex-wrap:wrap}
 .btn{background:#1a1a28;border:1px solid #252538;color:#9090b0;padding:.4rem .9rem;border-radius:8px;font-size:.8rem;cursor:pointer;display:inline-block;white-space:nowrap}
 .btn:hover{background:#20203a;color:#e0e0f0;text-decoration:none}
