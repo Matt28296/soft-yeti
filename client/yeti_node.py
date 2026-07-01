@@ -81,6 +81,26 @@ def _run_inference(
     return content.strip(), prompt_tokens, completion_tokens
 
 
+# ── Quality gate ─────────────────────────────────────────────────────────────
+
+_MAX_ALL_OUTPUTS = 10  # max attempt outputs sent per submission (caps payload)
+
+
+def _passes_quality_gate(output_text: str) -> bool:
+    """Return False for outputs too short or stuck in a repetition loop.
+
+    Catches inference failures (empty / near-empty responses) and degenerate
+    outputs where the model loops a short phrase indefinitely.  Outputs that
+    fail the gate are skipped before the hash check — they never hit the chain.
+    """
+    if len(output_text) < 20:
+        return False
+    # Repetition check: if the first 30 chars appear 4+ times, the model looped.
+    if len(output_text) > 120 and output_text.count(output_text[:30]) >= 4:
+        return False
+    return True
+
+
 # ── PoI nonce search ──────────────────────────────────────────────────────────
 
 def _submission_signing_message(
@@ -126,6 +146,8 @@ def _nonce_search(
     max_tokens = int(assignment.get("max_tokens", 512))
 
     nonce_attempts = 0
+    total_ct = 0
+    all_outputs: list[str] = []
 
     while not _STOP_EVENT.is_set():
         nonce_attempts += 1
@@ -137,15 +159,23 @@ def _nonce_search(
             logger.warning("Inference attempt %d failed for task %s: %s", nonce_attempts, task_id, exc)
             return False
 
+        total_ct += ct
+
+        if not _passes_quality_gate(output_text):
+            logger.debug("Quality gate rejected attempt %d for task %s", nonce_attempts, task_id)
+            if nonce_attempts >= cfg.max_nonce_attempts:
+                logger.warning("Max nonce attempts (%d) reached for task %s", cfg.max_nonce_attempts, task_id)
+                return False
+            continue
+
+        if len(all_outputs) < _MAX_ALL_OUTPUTS:
+            all_outputs.append(output_text)
+
         oh = _output_hash(output_text, task_id, task_salt)
 
         if _meets_difficulty(oh, difficulty_target):
             signing_msg = _submission_signing_message(task_id, oh, wallet_address, nonce_attempts, task_salt)
             submission_sig = sign_message(privkey_hex, signing_msg)
-            # Submit only the WINNING attempt's token counts.
-            # The reward formula is: ct × REWARD_RATE × nonce_attempts, so the
-            # multiplier already compensates for failed attempts — accumulating
-            # tokens across all attempts and multiplying would inflate the reward.
             payload = {
                 "task_id": task_id,
                 "volunteer_id": cfg.volunteer_id,
@@ -160,6 +190,8 @@ def _nonce_search(
                 "prompt_tokens": pt,
                 "completion_tokens": ct,
                 "task_salt": task_salt,
+                "total_completion_tokens": total_ct,
+                "all_outputs": all_outputs,
             }
             try:
                 resp = requests.post(

@@ -42,6 +42,8 @@ def _mined_submission(prefix: str = "0", output_base: str = "valid inference out
                 prompt_tokens=7,
                 completion_tokens=11,
                 task_salt=task_salt,
+                total_completion_tokens=0,
+                all_outputs=[],
             )
     raise AssertionError(f"could not mine output for prefix {prefix!r}")
 
@@ -67,6 +69,7 @@ def _settings(tmp_path, difficulty_target: str = "0") -> SimpleNamespace:
         COORDINATOR_ED25519_KEY_PATH=str(tmp_path / "coordinator.key"),
         COORDINATOR_ED25519_KEY_PASS=SecretStr(""),
         REWARD_RATE=0.001,
+        BASE_RATE=0.0001,
         TREASURY_FEE=0.1,
         CHAIN_ID="yeti-testnet",
         DB_PATH=str(tmp_path / "coordinator.db"),
@@ -300,8 +303,9 @@ async def test_mint_block_generates_ed25519_signature_and_block_hash(tmp_path) -
     assert len(signature_hex) == 128
     assert block["block_hash"] == expected_hash
     assert len(block["block_hash"]) == 64
-    assert block["miner_reward"] == pytest.approx(0.0099)
-    assert block["treasury_reward"] == pytest.approx(0.0011)
+    # gross = block_gross + base_gross = (11 × 0.001 × 1) + (11 × 0.0001) = 0.0121
+    assert block["miner_reward"] == pytest.approx(0.0121 * 0.9)
+    assert block["treasury_reward"] == pytest.approx(0.0121 * 0.1)
 
 
 @pytest.mark.asyncio

@@ -43,6 +43,10 @@ class InferenceSubmission(BaseModel):
     prompt_tokens: int = Field(ge=0)
     completion_tokens: int = Field(ge=0)
     task_salt: str
+    # Phase 1.5: accumulated across all nonce attempts for base-rate reward
+    total_completion_tokens: int = Field(ge=0, default=0)
+    # Phase 1.5: all attempt outputs so coordinator can deliver the best one to J-Claw
+    all_outputs: list[str] = Field(default_factory=list)
 
 
 class VolunteerRegistration(BaseModel):
@@ -110,6 +114,8 @@ class YetiBlock(BaseModel):
     benchmark_signature: str
     model_name: str = ""
     zk_proof: str = ""
+    total_completion_tokens: int = Field(ge=0, default=0)
+    base_reward: float = Field(ge=0, default=0.0)
     miner_reward: float = Field(ge=0)
     treasury_reward: float = Field(ge=0)
     coordinator_signature: str

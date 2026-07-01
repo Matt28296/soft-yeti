@@ -47,7 +47,15 @@ async def mint_block(
 ) -> dict[str, Any]:
     """Mint a signed YETI proof-of-inference block dictionary."""
 
-    gross = submission.completion_tokens * settings.REWARD_RATE * submission.nonce_attempts
+    # Block reward: based on the winning attempt's token count × attempts multiplier.
+    block_gross = submission.completion_tokens * settings.REWARD_RATE * submission.nonce_attempts
+    # Base reward: credited for every attempt's tokens regardless of block win (Phase 1.5).
+    # Falls back to winning-attempt tokens when clients don't send total_completion_tokens.
+    total_ct = submission.total_completion_tokens or (
+        submission.completion_tokens * submission.nonce_attempts
+    )
+    base_gross = total_ct * settings.BASE_RATE
+    gross = block_gross + base_gross
     miner_reward = gross * (1.0 - settings.TREASURY_FEE)
     treasury_reward = gross * settings.TREASURY_FEE
 
@@ -67,10 +75,12 @@ async def mint_block(
         "miner_pubkey": submission.miner_pubkey,
         "volunteer_id": submission.volunteer_id,
         "completion_tokens": submission.completion_tokens,
+        "total_completion_tokens": total_ct,
         "prompt_tokens": submission.prompt_tokens,
         "benchmark_signature": submission.benchmark_signature,
         "model_name": submission.model_name,
         "zk_proof": "",
+        "base_reward": round(base_gross * (1.0 - settings.TREASURY_FEE), 6),
         "miner_reward": miner_reward,
         "treasury_reward": treasury_reward,
         "coordinator_signature": "",

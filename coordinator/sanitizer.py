@@ -73,3 +73,34 @@ def sanitize_output(output: str, max_length: int = MAX_OUTPUT_LENGTH) -> str:
     """Strip control chars and truncate volunteer output before delivery to J-Claw."""
     output = _CONTROL_CHARS.sub("", output)
     return output[:max_length]
+
+
+def _output_quality_score(text: str) -> float:
+    """Score output quality for best-of-N selection. Higher is better.
+
+    Rewards length up to a reasonable cap; penalizes outputs that are too short
+    or stuck in a repetition loop (same 30-char window appearing 4+ times).
+    """
+    if len(text) < 20:
+        return 0.0
+    score = min(len(text) / 500.0, 1.0)
+    if len(text) > 120:
+        window = text[:30]
+        if text.count(window) >= 4:
+            score *= 0.1
+    return score
+
+
+def best_output(candidates: list[str], fallback: str) -> str:
+    """Return the highest-quality output from a list of candidates.
+
+    Falls back to `fallback` (the hash-winning output) if candidates is empty
+    or all candidates score zero.
+    """
+    if not candidates:
+        return fallback
+    scored = [(c, _output_quality_score(c)) for c in candidates if c.strip()]
+    if not scored:
+        return fallback
+    winner, top_score = max(scored, key=lambda x: x[1])
+    return winner if top_score > 0 else fallback

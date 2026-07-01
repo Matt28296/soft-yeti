@@ -18,6 +18,7 @@ class Settings(BaseSettings):
     COORDINATOR_ED25519_KEY_PASS: SecretStr = SecretStr("")
     TREASURY_WALLET: str = "YETI1treasury"
     REWARD_RATE: float = 0.001
+    BASE_RATE: float = 0.0001
     TREASURY_FEE: float = 0.1
     DIFFICULTY_TARGET: str = "0000"
     CANARY_RATE: float = 0.05

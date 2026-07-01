@@ -21,7 +21,7 @@ from coordinator.config import Settings, get_settings
 from coordinator.database import init_db
 from coordinator.minter import mint_block
 from coordinator.registry import VolunteerRegistry
-from coordinator.sanitizer import sanitize_output, sanitize_prompt
+from coordinator.sanitizer import best_output, sanitize_output, sanitize_prompt
 from coordinator.schemas import (
     GenerateRequest,
     GenerateResponse,
@@ -343,7 +343,8 @@ async def submit_inference(
         )
         _append_block(block)
     await task_queue.complete_assignment(submission.task_id)
-    await task_queue.deliver_result(submission.task_id, sanitize_output(submission.output_text))
+    chosen = best_output(submission.all_outputs, submission.output_text)
+    await task_queue.deliver_result(submission.task_id, sanitize_output(chosen))
 
     record = await registry.register_seen(
         volunteer_id=volunteer_id,
