@@ -444,13 +444,16 @@ async def explorer() -> HTMLResponse:
     return HTMLResponse(_EXPLORER_HTML)
 
 
+_NO_CACHE_HEADERS = {"Cache-Control": "no-store, no-cache, must-revalidate", "Pragma": "no-cache"}
+
+
 @app.get("/download/setup.ps1", response_class=PlainTextResponse)
 async def download_setup() -> PlainTextResponse:
     setup_path = Path(__file__).parent.parent / "setup_volunteer.ps1"
     content = setup_path.read_text(encoding="utf-8") if setup_path.exists() else "# Not found"
     return PlainTextResponse(
         content,
-        headers={"Content-Disposition": 'attachment; filename="setup_volunteer.ps1"'},
+        headers={"Content-Disposition": 'attachment; filename="setup_volunteer.ps1"', **_NO_CACHE_HEADERS},
     )
 
 
@@ -461,7 +464,7 @@ async def download_setup_bat() -> PlainTextResponse:
     content = setup_path.read_text(encoding="utf-8") if setup_path.exists() else "@echo off\r\necho Not found\r\npause\r\n"
     return PlainTextResponse(
         content,
-        headers={"Content-Disposition": 'attachment; filename="setup.bat"'},
+        headers={"Content-Disposition": 'attachment; filename="setup.bat"', **_NO_CACHE_HEADERS},
     )
 
 
@@ -490,7 +493,7 @@ async def download_volunteer_zip() -> Response:
     return Response(
         content=buf.getvalue(),
         media_type="application/zip",
-        headers={"Content-Disposition": 'attachment; filename="soft-yeti-volunteer.zip"'},
+        headers={"Content-Disposition": 'attachment; filename="soft-yeti-volunteer.zip"', **_NO_CACHE_HEADERS},
     )
 
 
@@ -502,6 +505,20 @@ async def health() -> dict[str, int | str]:
         "status": "ok",
         "healthy_volunteers": len(registry.healthy_volunteers()),
     }
+
+
+@app.get("/api/client-version")
+async def client_version() -> Response:
+    """Current bundled client version — volunteers poll this to detect + self-update.
+    Reads client/VERSION fresh from disk each request (bump that file to ship an update).
+    """
+    version_path = Path(__file__).parent.parent / "client" / "VERSION"
+    version = version_path.read_text(encoding="utf-8").strip() if version_path.exists() else "0"
+    return Response(
+        content=json.dumps({"version": version}),
+        media_type="application/json",
+        headers=_NO_CACHE_HEADERS,
+    )
 
 
 @app.post("/api/generate", response_model=GenerateResponse)

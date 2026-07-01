@@ -3,7 +3,7 @@
 #
 # Prerequisites (must be installed before running this):
 #   - Python 3.11+    https://python.org/downloads
-#   - Ollama          https://ollama.com/download
+# Ollama is installed automatically below if not already present.
 
 $ErrorActionPreference = "Stop"
 $Root      = $PSScriptRoot
@@ -25,12 +25,41 @@ try {
     exit 1
 }
 
-# -- 2. Ollama check -----------------------------------------------------------
-try {
-    $null = Invoke-RestMethod -Uri "http://localhost:11434/api/tags" -TimeoutSec 5
+# -- 2. Ollama check + auto-install -------------------------------------------
+function Test-OllamaReachable {
+    try {
+        $null = Invoke-RestMethod -Uri "http://localhost:11434/api/tags" -TimeoutSec 5
+        return $true
+    } catch {
+        return $false
+    }
+}
+
+if (Test-OllamaReachable) {
     Write-Host "[ok] Ollama is running."
-} catch {
-    Write-Host "[warning] Ollama not reachable at localhost:11434. Make sure Ollama is running before mining." -ForegroundColor Yellow
+} else {
+    Write-Host "[setup] Ollama not detected. Downloading and installing automatically..." -ForegroundColor Yellow
+    $OllamaInstaller = Join-Path $env:TEMP "OllamaSetup.exe"
+    try {
+        Invoke-WebRequest -Uri "https://ollama.com/download/OllamaSetup.exe" -OutFile $OllamaInstaller -UseBasicParsing
+        Write-Host "[setup] Running Ollama installer (this can take a minute)..."
+        Start-Process -FilePath $OllamaInstaller -ArgumentList "/VERYSILENT", "/NORESTART", "/SUPPRESSMSGBOXES" -Wait
+        Remove-Item $OllamaInstaller -ErrorAction SilentlyContinue
+
+        $ready = $false
+        for ($i = 0; $i -lt 30; $i++) {
+            Start-Sleep -Seconds 2
+            if (Test-OllamaReachable) { $ready = $true; break }
+        }
+        if ($ready) {
+            Write-Host "[ok] Ollama installed and running."
+        } else {
+            Write-Host "[warning] Ollama installed but not reachable yet - it may still be starting. Continuing; if mining fails, start Ollama manually and re-run this script." -ForegroundColor Yellow
+        }
+    } catch {
+        Write-Host "[warning] Automatic Ollama install failed: $_" -ForegroundColor Yellow
+        Write-Host "[warning] Please install manually from https://ollama.com/download and re-run this script." -ForegroundColor Yellow
+    }
 }
 
 # -- 3. Detect GPU VRAM ---------------------------------------------------------

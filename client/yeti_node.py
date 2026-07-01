@@ -12,10 +12,15 @@ Flow per task:
 from __future__ import annotations
 
 import hashlib
+import io
 import json
 import logging
+import os
+import sys
 import threading
 import time
+import zipfile
+from pathlib import Path
 from typing import Any
 
 import requests
@@ -27,6 +32,56 @@ from yeti_wallet import sign_message
 logger = logging.getLogger(__name__)
 
 _STOP_EVENT = threading.Event()
+
+_CLIENT_DIR = Path(__file__).resolve().parent
+_INSTALL_DIR = _CLIENT_DIR.parent
+_VERSION_FILE = _CLIENT_DIR / "VERSION"
+
+
+# ── Auto-update ───────────────────────────────────────────────────────────────
+
+def _local_version() -> str:
+    try:
+        return _VERSION_FILE.read_text(encoding="utf-8").strip()
+    except FileNotFoundError:
+        return "0"
+
+
+def _check_for_update(cfg: YetiConfig) -> bool:
+    """Compare our version against the coordinator's; self-update if stale.
+    Wallet + config live outside client/ (~/.soft_yeti/), so overwriting
+    client/ wholesale is safe — nothing identity-related gets touched.
+    Returns True if an update was applied (caller should restart the process).
+    """
+    try:
+        resp = requests.get(f"{cfg.coordinator_url}/api/client-version", timeout=10)
+        resp.raise_for_status()
+        remote_version = resp.json().get("version", "")
+    except Exception as exc:
+        logger.debug("Version check failed: %s", exc)
+        return False
+
+    local_version = _local_version()
+    if not remote_version or remote_version == local_version:
+        return False
+
+    logger.info("Update available: %s -> %s. Downloading...", local_version, remote_version)
+    try:
+        ts = int(time.time())
+        zip_resp = requests.get(f"{cfg.coordinator_url}/download/volunteer.zip?v={ts}", timeout=120)
+        zip_resp.raise_for_status()
+        with zipfile.ZipFile(io.BytesIO(zip_resp.content)) as zf:
+            zf.extractall(_INSTALL_DIR)
+        logger.info("Update applied (%s -> %s). Restarting...", local_version, remote_version)
+        return True
+    except Exception as exc:
+        logger.warning("Auto-update failed, continuing on current version: %s", exc)
+        return False
+
+
+def _restart_process() -> None:
+    python = sys.executable
+    os.execv(python, [python] + sys.argv)
 
 
 # ── Hash helpers ──────────────────────────────────────────────────────────────
@@ -235,7 +290,9 @@ def _backoff_delay(fail_count: int) -> float:
 # ── Background loops ──────────────────────────────────────────────────────────
 
 def heartbeat_loop(cfg: YetiConfig) -> None:
-    """POST /api/heartbeat on a fixed interval to keep the volunteer lease alive."""
+    """POST /api/heartbeat on a fixed interval to keep the volunteer lease alive.
+    Also checks for + applies client updates on the same cadence.
+    """
     headers = {"X-Yeti-API-Key": f"{cfg.volunteer_id}:{cfg.api_key}"}
     while not _STOP_EVENT.is_set():
         try:
@@ -246,6 +303,8 @@ def heartbeat_loop(cfg: YetiConfig) -> None:
             )
         except Exception as exc:
             logger.debug("Heartbeat failed: %s", exc)
+        if _check_for_update(cfg):
+            _restart_process()
         _STOP_EVENT.wait(cfg.heartbeat_interval_s)
 
 

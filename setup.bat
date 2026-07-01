@@ -10,7 +10,8 @@ echo.
 if not exist "%INSTALL_DIR%" mkdir "%INSTALL_DIR%"
 
 echo Downloading setup bundle to %INSTALL_DIR% ...
-powershell -NoProfile -ExecutionPolicy Bypass -Command "try { Invoke-WebRequest -Uri 'https://soft-yeti.com/download/volunteer.zip' -OutFile '%ZIP_PATH%' -UseBasicParsing } catch { Write-Host $_.Exception.Message -ForegroundColor Red; exit 1 }"
+REM cache-busting timestamp query param - Cloudflare edge-caches .zip by extension regardless of origin Cache-Control
+powershell -NoProfile -ExecutionPolicy Bypass -Command "try { $ts = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds(); Invoke-WebRequest -Uri \"https://soft-yeti.com/download/volunteer.zip?v=$ts\" -OutFile '%ZIP_PATH%' -UseBasicParsing } catch { Write-Host $_.Exception.Message -ForegroundColor Red; exit 1 }"
 if errorlevel 1 (
     echo.
     echo Download failed. Check your internet connection and try again.
