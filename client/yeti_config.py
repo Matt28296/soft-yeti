@@ -14,6 +14,7 @@ class YetiConfig:
     volunteer_id: str = ""
     model_name: str = "qwen2.5-coder:7b-instruct"
     vram_gb: float = 0.0
+    gpu_name: str = ""
     wallet_path: str = str(Path.home() / ".soft_yeti" / "wallet.json")
     api_key: str = ""
     enabled: bool = False

@@ -147,6 +147,7 @@ Write-Host ""
 # Pass detected values as env vars so the setup wizard can pre-fill them
 $env:YETI_DETECTED_VRAM  = "$DetectedVRAM"
 $env:YETI_DETECTED_MODEL = $ModelName
+$env:YETI_DETECTED_GPU   = $DetectedGPU
 
 Push-Location $ClientDir
 try {
@@ -155,6 +156,7 @@ try {
     Pop-Location
     $env:YETI_DETECTED_VRAM  = $null
     $env:YETI_DETECTED_MODEL = $null
+    $env:YETI_DETECTED_GPU   = $null
 }
 
 Write-Host ""

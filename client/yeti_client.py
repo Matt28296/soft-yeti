@@ -45,6 +45,7 @@ def _setup(cfg_path: Path) -> None:
     # setup_volunteer.ps1 passes detected GPU defaults via env vars
     default_model = os.environ.get("YETI_DETECTED_MODEL", "qwen2.5-coder:7b-instruct")
     default_vram  = os.environ.get("YETI_DETECTED_VRAM", "8.0")
+    detected_gpu  = os.environ.get("YETI_DETECTED_GPU", "")
 
     model_name = input(f"Ollama model name [{default_model}]: ").strip() or default_model
     try:
@@ -97,6 +98,7 @@ def _setup(cfg_path: Path) -> None:
         volunteer_id=volunteer_id,
         model_name=model_name,
         vram_gb=vram_gb,
+        gpu_name=detected_gpu,
         wallet_path=str(wallet_path),
         api_key=api_key,
         enabled=True,

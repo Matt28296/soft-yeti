@@ -115,7 +115,7 @@ def _status_data() -> dict:
     balance = _get_balance(cfg.coordinator_url, wallet) if wallet else 0.0
     return {
         "mining": _is_mining(),
-        "gpu": _GPU,
+        "gpu": cfg.gpu_name if cfg.gpu_name else _GPU,
         "model": cfg.model_name,
         "vram_gb": cfg.vram_gb,
         "wallet": wallet,
