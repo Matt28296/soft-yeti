@@ -21,6 +21,10 @@ class Settings(BaseSettings):
     BASE_RATE: float = 0.0001
     TREASURY_FEE: float = 0.1
     DIFFICULTY_TARGET: str = "0000"
+    # Phase 3: mobile tier — inference is slower per-attempt than desktop GPU, so mobile
+    # backends get an easier (shorter) target to keep expected-attempts-to-mint comparable.
+    DIFFICULTY_TARGET_METAL: str = "00"
+    DIFFICULTY_TARGET_VULKAN: str = "00"
     CANARY_RATE: float = 0.05
     CHAIN_ID: str = "yeti-testnet"
     CHAIN_STORE_PATH: str = str(_HERE / "yeti-chain.jsonl")
@@ -32,6 +36,14 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_file=str(_HERE / ".env"), env_file_encoding="utf-8"
     )
+
+    def difficulty_for_backend(self, inference_backend: str) -> str:
+        """Resolve the difficulty_target for a volunteer's backend, falling back to desktop default."""
+        overrides = {
+            "metal": self.DIFFICULTY_TARGET_METAL,
+            "vulkan": self.DIFFICULTY_TARGET_VULKAN,
+        }
+        return overrides.get(inference_backend, self.DIFFICULTY_TARGET)
 
 
 @lru_cache

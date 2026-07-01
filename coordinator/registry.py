@@ -24,6 +24,9 @@ class VolunteerRecord:
     failure_count: int = 0
     last_failure: float | None = None
     active: bool = True
+    # Phase 3: mobile tier — model family + inference runtime, defaulted for desktop compat
+    model_type: str = "standard"
+    inference_backend: str = "ollama"
 
 
 MAX_FAILURE_COUNT = 10
@@ -43,6 +46,8 @@ class VolunteerRegistry:
         model_name: str = "",
         vram_gb: float = 0.0,
         miner_wallet: str = "",
+        model_type: str = "",
+        inference_backend: str = "",
     ) -> VolunteerRecord:
         """Create or refresh a volunteer record with the current UTC timestamp."""
         now = utc_timestamp()
@@ -56,6 +61,8 @@ class VolunteerRegistry:
                     miner_wallet=miner_wallet,
                     registered_at=now,
                     last_seen=now,
+                    model_type=model_type or "standard",
+                    inference_backend=inference_backend or "ollama",
                 )
                 self._volunteers[volunteer_id] = record
             else:
@@ -67,7 +74,15 @@ class VolunteerRegistry:
                     record.vram_gb = vram_gb
                 if miner_wallet:
                     record.miner_wallet = miner_wallet
+                if model_type:
+                    record.model_type = model_type
+                if inference_backend:
+                    record.inference_backend = inference_backend
             return record
+
+    def get(self, volunteer_id: str) -> VolunteerRecord | None:
+        """Return a volunteer's record, or None if unregistered (in-memory read, no lock needed)."""
+        return self._volunteers.get(volunteer_id)
 
     async def heartbeat(self, volunteer_id: str) -> bool:
         """Update a volunteer heartbeat timestamp if the volunteer exists."""

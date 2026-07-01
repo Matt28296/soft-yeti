@@ -79,6 +79,8 @@ async def mint_block(
         "prompt_tokens": submission.prompt_tokens,
         "benchmark_signature": submission.benchmark_signature,
         "model_name": submission.model_name,
+        "model_type": submission.model_type,
+        "inference_backend": submission.inference_backend,
         "zk_proof": "",
         "base_reward": round(base_gross * (1.0 - settings.TREASURY_FEE), 6),
         "miner_reward": miner_reward,

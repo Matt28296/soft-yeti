@@ -39,16 +39,25 @@ async def register_volunteer(db_path: str, reg: VolunteerRegistration) -> str:
             # Same identity re-registering (e.g. after coordinator restart) — rotate key only
             await db.execute(
                 "UPDATE volunteers SET api_key_hash = ?, model_name = ?, vram_gb = ?, "
-                "registered_at = ? WHERE volunteer_id = ?",
-                (api_key_hash, reg.model_name, reg.vram_gb, time.time(), reg.volunteer_id),
+                "registered_at = ?, inference_backend = ?, model_type = ? WHERE volunteer_id = ?",
+                (
+                    api_key_hash,
+                    reg.model_name,
+                    reg.vram_gb,
+                    time.time(),
+                    reg.inference_backend,
+                    reg.model_type,
+                    reg.volunteer_id,
+                ),
             )
         else:
             await db.execute(
                 """
                 INSERT INTO volunteers (
                     volunteer_id, miner_wallet, api_key_hash,
-                    model_name, vram_gb, miner_pubkey, registered_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                    model_name, vram_gb, miner_pubkey, registered_at,
+                    inference_backend, model_type
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     reg.volunteer_id,
@@ -58,6 +67,8 @@ async def register_volunteer(db_path: str, reg: VolunteerRegistration) -> str:
                     reg.vram_gb,
                     reg.miner_pubkey,
                     time.time(),
+                    reg.inference_backend,
+                    reg.model_type,
                 ),
             )
         await db.commit()
@@ -68,19 +79,19 @@ async def register_volunteer(db_path: str, reg: VolunteerRegistration) -> str:
 async def get_volunteer_security_info(
     db_path: str,
     volunteer_id: str,
-) -> tuple[str, str] | None:
-    """Return (miner_pubkey, model_name) for a registered volunteer, or None if not found."""
+) -> tuple[str, str, str] | None:
+    """Return (miner_pubkey, model_name, inference_backend) for a registered volunteer, or None if not found."""
 
     async with aiosqlite.connect(db_path) as db:
         cursor = await db.execute(
-            "SELECT miner_pubkey, model_name FROM volunteers WHERE volunteer_id = ?",
+            "SELECT miner_pubkey, model_name, inference_backend FROM volunteers WHERE volunteer_id = ?",
             (volunteer_id,),
         )
         row = await cursor.fetchone()
 
     if row is None:
         return None
-    return str(row[0] or ""), str(row[1] or "")
+    return str(row[0] or ""), str(row[1] or ""), str(row[2] or "ollama")
 
 
 async def verify_api_key(db_path: str, volunteer_id: str, raw_key: str) -> bool:

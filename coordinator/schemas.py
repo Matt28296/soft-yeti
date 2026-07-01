@@ -47,6 +47,9 @@ class InferenceSubmission(BaseModel):
     total_completion_tokens: int = Field(ge=0, default=0)
     # Phase 1.5: all attempt outputs so coordinator can deliver the best one to J-Claw
     all_outputs: list[str] = Field(default_factory=list)
+    # Phase 3: mobile tier — model family + inference runtime, defaulted for desktop compat
+    model_type: str = "standard"
+    inference_backend: str = "ollama"
 
 
 class VolunteerRegistration(BaseModel):
@@ -59,6 +62,9 @@ class VolunteerRegistration(BaseModel):
     miner_pubkey: str
     model_name: str
     vram_gb: float = Field(ge=0)
+    # Phase 3: mobile tier — model family + inference runtime, defaulted for desktop compat
+    model_type: str = "standard"
+    inference_backend: str = "ollama"
 
 
 class HeartbeatRequest(BaseModel):
@@ -120,6 +126,9 @@ class YetiBlock(BaseModel):
     treasury_reward: float = Field(ge=0)
     coordinator_signature: str
     block_hash: str
+    # Phase 3: mobile tier — model family + inference runtime, defaulted for desktop compat
+    model_type: str = ""
+    inference_backend: str = ""
 
 
 class GenerateRequest(BaseModel):

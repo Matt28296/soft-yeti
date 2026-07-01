@@ -9,18 +9,23 @@ from typing import Any
 
 from coordinator.canary import choose_canary, should_inject
 from coordinator.config import Settings, get_settings
+from coordinator.registry import VolunteerRegistry
 from coordinator.schemas import TaskAssignment, TaskRequest
 
 
 class TaskQueue:
     """Queue sanitized prompts and track assigned work until completion."""
 
-    def __init__(self) -> None:
+    def __init__(self, registry: VolunteerRegistry | None = None) -> None:
         self._queue: asyncio.Queue[TaskAssignment] = asyncio.Queue()
         self._pending: dict[str, TaskAssignment] = {}
         self._lock = asyncio.Lock()
         self._result_events: dict[str, asyncio.Event] = {}
         self._result_store: dict[str, str] = {}
+        # Phase 3: mobile tier — lets assign_next() resolve a per-backend difficulty
+        # target for whichever volunteer actually claims the task (unknown at enqueue time
+        # under a shared queue).
+        self._registry = registry
 
     @property
     def pending(self) -> dict[str, TaskAssignment]:
@@ -91,13 +96,32 @@ class TaskQueue:
         await self._queue.put(assignment)
         return assignment
 
-    async def assign_next(self) -> TaskAssignment | None:
-        """Assign the next queued task and track it as pending by assignment id."""
+    async def assign_next(
+        self,
+        volunteer_id: str | None = None,
+        settings: Settings | None = None,
+    ) -> TaskAssignment | None:
+        """Assign the next queued task and track it as pending by assignment id.
+
+        When volunteer_id is given and a registry is wired in, resolves that
+        volunteer's backend-specific difficulty target (mobile backends get an
+        easier target than desktop's default) before handing out the assignment —
+        difficulty can't be resolved at enqueue time since the assignee isn't known
+        until a volunteer actually polls for work.
+        """
 
         try:
             assignment = self._queue.get_nowait()
         except asyncio.QueueEmpty:
             return None
+
+        if volunteer_id is not None and self._registry is not None:
+            record = self._registry.get(volunteer_id)
+            if record is not None:
+                resolved_settings = settings or get_settings()
+                assignment.difficulty_target = resolved_settings.difficulty_for_backend(
+                    record.inference_backend
+                )
 
         async with self._lock:
             self._pending[assignment.task_id] = assignment

@@ -44,6 +44,8 @@ def _mined_submission(prefix: str = "0", output_base: str = "valid inference out
                 task_salt=task_salt,
                 total_completion_tokens=0,
                 all_outputs=[],
+                model_type="standard",
+                inference_backend="ollama",
             )
     raise AssertionError(f"could not mine output for prefix {prefix!r}")
 

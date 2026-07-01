@@ -87,7 +87,7 @@ async def verify_submission(
     if vol_info is None:
         return False, "volunteer not found"
 
-    stored_pubkey, stored_model = vol_info
+    stored_pubkey, stored_model, _stored_backend = vol_info
 
     if not stored_pubkey:
         return False, "volunteer has no registered public key"

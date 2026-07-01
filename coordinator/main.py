@@ -40,7 +40,7 @@ from coordinator.verifier import verify_submission
 
 settings = get_settings()
 registry = VolunteerRegistry()
-task_queue = TaskQueue()
+task_queue = TaskQueue(registry=registry)
 
 limiter = Limiter(key_func=get_remote_address)
 _chain_lock = asyncio.Lock()
@@ -583,7 +583,7 @@ async def get_next_task(
     """Volunteer polls for the next queued task without submitting a new one."""
 
     await registry.heartbeat(volunteer_id)
-    assignment = await task_queue.assign_next()
+    assignment = await task_queue.assign_next(volunteer_id=volunteer_id)
     if assignment is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No task available")
     return assignment
@@ -603,6 +603,8 @@ async def register(request: Request, registration: VolunteerRegistration) -> dic
         model_name=registration.model_name,
         vram_gb=registration.vram_gb,
         miner_wallet=registration.miner_wallet,
+        model_type=registration.model_type,
+        inference_backend=registration.inference_backend,
     )
     return {"volunteer_id": registration.volunteer_id, "api_key": api_key}
 
@@ -616,7 +618,7 @@ async def assign_task(
 
     await registry.heartbeat(volunteer_id)
     await task_queue.enqueue_prompt(task, settings=settings)
-    assignment = await task_queue.assign_next()
+    assignment = await task_queue.assign_next(volunteer_id=volunteer_id)
     if assignment is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

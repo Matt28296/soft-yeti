@@ -18,13 +18,23 @@ async def init_db(db_path: str) -> None:
                 model_name TEXT,
                 vram_gb REAL,
                 miner_pubkey TEXT DEFAULT '',
-                registered_at REAL
+                registered_at REAL,
+                inference_backend TEXT DEFAULT 'ollama',
+                model_type TEXT DEFAULT 'standard'
             )
             """
         )
-        # Migration: add column to pre-existing DBs that lack it
+        # Migrations: add columns to pre-existing DBs that lack them
         try:
             await db.execute("ALTER TABLE volunteers ADD COLUMN miner_pubkey TEXT DEFAULT ''")
+        except Exception:
+            pass  # Column already exists
+        try:
+            await db.execute("ALTER TABLE volunteers ADD COLUMN inference_backend TEXT DEFAULT 'ollama'")
+        except Exception:
+            pass  # Column already exists
+        try:
+            await db.execute("ALTER TABLE volunteers ADD COLUMN model_type TEXT DEFAULT 'standard'")
         except Exception:
             pass  # Column already exists
         await db.execute(
