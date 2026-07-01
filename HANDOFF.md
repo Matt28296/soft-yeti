@@ -358,6 +358,19 @@ Retest after the restart: full pass — Block #2 minted, 59.69 YETI, confirmed v
 
 Considered building a full bundled `SoftYetiSetup.exe` (PyInstaller) instead, but held off: an unsigned `.exe` triggers Windows SmartScreen's "Windows protected your PC" warning (a code-signing cert requires business verification and real setup time), and it's a bigger lift than justified before the 5-tester round has even surfaced what else needs fixing. `.bat` wrapper solves the actual reported problem now; `SoftYetiSetup.exe` stays on the Phase 2 roadmap, informed by whatever this test round turns up.
 
+**Second + third real tester reports (two different testers, two different machines — AMD 9070 XT and Intel Iris Xe integrated graphics):** both hit the encoding-fixed `setup_volunteer.ps1` running cleanly, but then failed with `ERROR: Could not open requirements file` and `can't open file '...\yeti_client.py'`. Root cause: **`setup.bat` only ever downloaded the lone `setup_volunteer.ps1`** — it never fetched the `client/` directory (`requirements.txt`, `yeti_client.py`, `yeti_wallet.py`, etc.) that the script depends on. Every tester who got past the `.ps1` double-click issue would have hit this next. Couldn't use `git clone` or GitHub's zip/archive endpoint to fix it because **the repo is private** — unauthenticated testers have no GitHub credentials.
+
+**Fix (commit `312e701`):**
+- New coordinator route `/download/volunteer.zip` — self-hosted, in-memory `zipfile` bundling `setup_volunteer.ps1` + all of `client/` (excludes `.venv`/`__pycache__`), served with `Content-Disposition: attachment`.
+- `setup.bat` rewritten to download this zip (not the lone `.ps1`), `Expand-Archive` it into `%USERPROFILE%\soft-yeti`, then run the extracted `setup_volunteer.ps1` from there.
+- Landing page's redundant "prefer PowerShell directly, download the `.ps1`" secondary link removed — it had the identical gap standalone. Two clean options remain: primary `.bat` (zip-based) and manual `git clone` (already fetches everything, no gap).
+
+**Bonus bug found during the fix's dry-run (not tester-reported yet, would have hit anyone in the 4–6GB VRAM tier):** the model ladder's 4-6GB tag `phi4-mini:3.8b-instruct` doesn't exist in Ollama's registry (`pull model manifest: file does not exist`) — the actual tag is `phi4-mini` (empirically verified by testing several candidate tags against a live Ollama pull). **Fix:** corrected in `setup_volunteer.ps1` and `README.md`.
+
+**Verification before pushing:** downloaded the zip via the public URL and inspected contents (all 9 client files present, `.venv` correctly excluded); ran the actual downloaded `.bat` end-to-end with output captured — confirmed it now creates `client/` with all files, and watched `phi4-mini` pull real bytes (28-44% of 2.5GB) instead of erroring, proving both fixes before telling either tester to retry.
+
+**Known non-blocking issue, not fixed yet:** WMI-based VRAM fallback detection under-reports VRAM on at least the 9070 XT dev machine (reported 4 GB on a 16 GB card) — `nvidia-smi`/`rocm-smi` weren't found so it fell back to `Win32_VideoController.AdapterRAM`, which has a known Windows limitation capping around 4GB for many modern GPUs. Not blocking (picks a smaller, still-valid model, not a hard failure) — logged here as a Phase 2 follow-up rather than fixed under tester-blocking time pressure.
+
 ---
 
 ## Bugs found and fixed during Phase 0 validation (2026-06-30)
